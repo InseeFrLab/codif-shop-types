@@ -65,14 +65,30 @@ Résultat :
   "libelle": "Grande surface spécialisée dans l’équipement de la maison",
   "justification": "...",
   "recherche_web": {
-    "lancee": false,
-    "requetes": []
+    "lancee": true,
+    "recherches": [
+      {
+        "requete": "ELECTRO DEPOT activité",
+        "moteurs_utilises": ["brave", "google cse"],
+        "moteurs_en_echec": [{"moteur": "duckduckgo", "raison": "CAPTCHA"}],
+        "resultats": [
+          {"titre": "...", "url": "https://...", "moteurs": ["brave", "google cse"]}
+        ]
+      }
+    ]
   }
 }
 ```
 
-Le champ `recherche_web` indique si le modèle a lancé une recherche web (`lancee`) et
-avec quelles requêtes (`requetes`).
+Le champ `recherche_web` trace les recherches web du modèle :
+- `lancee` : `true` si le modèle a cherché sur le web, `false` sinon (`recherches` est alors vide) ;
+- pour chaque recherche : la requête, les moteurs qui ont répondu (`moteurs_utilises`),
+  ceux qui ont échoué avec la raison (`moteurs_en_echec`, par ex. captcha ou trop de
+  requêtes) et les résultats retenus avec leur URL et les moteurs qui les ont trouvés ;
+- `erreur` apparaît en plus si SearXNG n'a pas pu être interrogé.
+
+SearXNG interroge plusieurs moteurs en parallèle : il n'y a pas un seul moteur par
+recherche, et l'ensemble des moteurs qui répondent peut varier d'une requête à l'autre.
 
 Le code renvoyé par le modèle est vérifié contre la nomenclature (le libellé en est
 recopié) ; sinon la commande échoue avec un message d'erreur et la réponse brute.
@@ -83,11 +99,11 @@ format), modifie `prompts/classification.txt` : les mots `$nomenclature`, `$libe
 `$ville` sont remplacés par le code, ne les supprime pas.
 
 Depuis un autre script Python, la boucle LLM + recherche est réutilisable ; elle renvoie
-la réponse et la liste des requêtes lancées :
+la réponse et le détail des recherches lancées :
 
 ```python
 from websearch import run_agent
-reponse, requetes = run_agent([{"role": "user", "content": "Ta question"}])
+reponse, recherches = run_agent([{"role": "user", "content": "Ta question"}])
 ```
 
 Pour un simple test du client sans recherche web : `uv run client.py`.

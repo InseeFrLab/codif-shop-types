@@ -25,7 +25,7 @@ PRÉREQUIS
 UTILISATION
     Ce module est une bibliothèque, il n'a pas de commande propre. Exemple :
         from websearch import run_agent
-        reponse, requetes = run_agent([{"role": "user", "content": "Ta question"}])
+        reponse, recherches = run_agent([{"role": "user", "content": "Ta question"}])
     Pour la classification d'enseignes, voir classify.py.
     Quand le modèle fait une recherche, la ligne "[tool] web_search(...)" est
     affichée dans le terminal (sur stderr) ; si elle n'apparaît pas, le modèle
@@ -77,8 +77,20 @@ TOOLS = [
 ]
 
 
-def web_search(query: str, max_results: int = 5) -> str:
-    """Interroge SearXNG et renvoie les résultats sous forme de texte compact."""
+def web_search(query: str, max_results: int = 5) -> tuple[str, dict]:
+    """Interroge SearXNG et renvoie (texte, détails).
+
+      - texte   : les résultats sous forme de texte compact, envoyé au modèle ;
+      - détails : un dictionnaire décrivant la recherche (requête, moteurs qui ont
+                  répondu, moteurs en échec, résultats retenus avec leur URL), pour
+                  garder une trace de ce qui a été fait. Le modèle ne le voit pas.
+    """
+    details = {
+        "requete": query,
+        "moteurs_utilises": [],
+        "moteurs_en_echec": [],
+        "resultats": [],
+    }
     try:
         # SearXNG est appelé comme une API web ; format=json demande une réponse JSON.
         r = requests.get(
@@ -87,28 +99,53 @@ def web_search(query: str, max_results: int = 5) -> str:
             timeout=15,
         )
         r.raise_for_status()  # lève une erreur si le serveur répond avec un code d'échec
-        results = r.json().get("results", [])[:max_results]  # on garde les N premiers
+        data = r.json()
     except Exception as e:
         # En cas de souci (SearXNG arrêté, timeout...), on renvoie l'erreur sous forme
         # de texte au modèle plutôt que de faire planter le programme.
-        return f"Erreur de recherche : {e}"
+        details["erreur"] = str(e)
+        return f"Erreur de recherche : {e}", details
+
+    all_results = data.get("results", [])
+    results = all_results[:max_results]  # on ne garde que les N premiers
+
+    # SearXNG interroge plusieurs moteurs ; chaque résultat indique ceux qui l'ont
+    # trouvé (champ "engines"). On en déduit les moteurs qui ont réellement répondu.
+    details["moteurs_utilises"] = sorted(
+        {engine for res in all_results for engine in res.get("engines", [])}
+    )
+    # "unresponsive_engines" : liste de [moteur, raison] (ex. ["duckduckgo", "CAPTCHA"]).
+    details["moteurs_en_echec"] = [
+        {"moteur": engine, "raison": reason}
+        for engine, reason in data.get("unresponsive_engines", [])
+    ]
+    details["resultats"] = [
+        {
+            "titre": res.get("title", ""),
+            "url": res.get("url", ""),
+            "moteurs": res.get("engines", []),
+        }
+        for res in results
+    ]
 
     if not results:
-        return "Aucun résultat."
+        return "Aucun résultat.", details
     # Mise en forme : "[1] titre / url / extrait", séparés par une ligne vide.
-    return "\n\n".join(
+    text = "\n\n".join(
         f"[{i}] {res.get('title', '')}\n{res.get('url', '')}\n{res.get('content', '')}"
         for i, res in enumerate(results, 1)
     )
+    return text, details
 
 
-def run_agent(messages: list[dict]) -> tuple[str, list[str]]:
+def run_agent(messages: list[dict]) -> tuple[str, list[dict]]:
     """Envoie une conversation au modèle, qui peut utiliser web_search.
 
-    Renvoie un tuple (réponse, requêtes) :
-      - réponse  : le texte de la réponse finale du modèle ;
-      - requêtes : la liste des recherches web lancées (vide si le modèle a
-                   répondu sans chercher).
+    Renvoie un tuple (réponse, recherches) :
+      - réponse    : le texte de la réponse finale du modèle ;
+      - recherches : la liste des recherches web lancées, chacune sous la forme
+                     du dictionnaire "détails" de web_search() (requête, moteurs,
+                     résultats...). Liste vide si le modèle a répondu sans chercher.
 
     `messages` est l'historique au format OpenAI, par exemple
     [{"role": "user", "content": "..."}]. La liste est modifiée en place : les
@@ -116,7 +153,7 @@ def run_agent(messages: list[dict]) -> tuple[str, list[str]]:
     """
     client = get_client()
     model = os.environ["LLM_LAB_MODEL"]
-    queries: list[str] = []  # les recherches effectivement lancées
+    searches: list[dict] = []  # le détail des recherches effectivement lancées
 
     for _ in range(MAX_ITERATIONS):
         # On envoie la conversation + la description des outils disponibles.
@@ -127,7 +164,7 @@ def run_agent(messages: list[dict]) -> tuple[str, list[str]]:
 
         # Cas 1 : pas de demande d'outil -> c'est la réponse finale.
         if not message.tool_calls:
-            return message.content or "", queries
+            return message.content or "", searches
 
         # Cas 2 : le modèle demande un ou plusieurs outils. On ajoute sa demande à
         # l'historique, puis on exécute chaque recherche et on ajoute le résultat
@@ -135,14 +172,11 @@ def run_agent(messages: list[dict]) -> tuple[str, list[str]]:
         messages.append(message)
         for call in message.tool_calls:
             args = json.loads(call.function.arguments)  # ex. {"query": "..."}
-            queries.append(args.get("query", ""))
             print(f"[tool] web_search({args.get('query')!r})", file=sys.stderr)
+            text, details = web_search(args.get("query", ""))
+            searches.append(details)  # trace pour l'appelant ; le modèle ne la voit pas
             messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": call.id,
-                    "content": web_search(args.get("query", "")),
-                }
+                {"role": "tool", "tool_call_id": call.id, "content": text}
             )
         # La boucle recommence : le modèle voit maintenant les résultats et peut
         # soit répondre, soit demander une nouvelle recherche.
@@ -152,4 +186,4 @@ def run_agent(messages: list[dict]) -> tuple[str, list[str]]:
     response = client.chat.completions.create(
         model=model, messages=messages, tools=TOOLS, tool_choice="none"
     )
-    return response.choices[0].message.content or "", queries
+    return response.choices[0].message.content or "", searches

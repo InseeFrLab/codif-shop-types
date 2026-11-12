@@ -105,7 +105,7 @@ def main() -> int:
 
     nomenclature = load_nomenclature(args.nomenclature)
     prompt = build_prompt(args.libelle, args.city, nomenclature)
-    answer, queries = run_agent([{"role": "user", "content": prompt}])
+    answer, searches = run_agent([{"role": "user", "content": prompt}])
 
     try:
         result = parse_answer(answer, nomenclature)
@@ -113,8 +113,9 @@ def main() -> int:
         print(f"Erreur : {e}.\nRéponse brute du modèle :\n{answer}", file=sys.stderr)
         return 1
 
-    # Indique si le modèle a lancé une recherche web, et avec quelles requêtes.
-    result["recherche_web"] = {"lancee": bool(queries), "requetes": queries}
+    # Indique si le modèle a lancé une recherche web et détaille chaque recherche
+    # (requête, moteurs utilisés ou en échec, URLs des résultats retenus).
+    result["recherche_web"] = {"lancee": bool(searches), "recherches": searches}
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
