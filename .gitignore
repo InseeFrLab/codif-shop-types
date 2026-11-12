@@ -1,0 +1,13 @@
+# Secrets : ne jamais publier la clé API
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Éditeurs / système
+.vscode/
+.idea/
+.DS_Store
