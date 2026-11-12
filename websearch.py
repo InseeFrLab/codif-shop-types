@@ -9,13 +9,12 @@ PRINCIPE (function calling)
       3. Notre code exécute la recherche (fonction web_search, via SearXNG),
          puis renvoie les résultats au modèle.
       4. Le modèle rédige sa réponse finale en s'appuyant sur ces résultats.
-    Cette boucle est dans la fonction chat().
+    Cette boucle est dans la fonction run_agent().
 
 STRUCTURE DU FICHIER
     - TOOLS       : la description de l'outil, lue par le modèle
     - web_search  : la vraie recherche (interroge SearXNG)
-    - chat        : la boucle question -> outil -> réponse
-    - bloc final  : permet de lancer le fichier depuis le terminal
+    - run_agent   : la boucle messages -> outil -> réponse finale
 
 PRÉREQUIS
     - SearXNG doit tourner : ./setup_searxng.sh
@@ -24,15 +23,13 @@ PRÉREQUIS
       LLM_LAB_MODEL et SEARXNG_URL.
 
 UTILISATION
-    En terminal :
-        uv run websearch.py "Quelle est la météo à Paris ?"
-        (sans question, une question d'exemple est utilisée)
-    Dans un autre script Python :
-        from websearch import chat
-        print(chat("Ta question"))
+    Ce module est une bibliothèque, il n'a pas de commande propre. Exemple :
+        from websearch import run_agent
+        reponse, requetes = run_agent([{"role": "user", "content": "Ta question"}])
+    Pour la classification d'enseignes, voir classify.py.
     Quand le modèle fait une recherche, la ligne "[tool] web_search(...)" est
-    affichée dans le terminal ; si elle n'apparaît pas, le modèle a répondu
-    sans chercher.
+    affichée dans le terminal (sur stderr) ; si elle n'apparaît pas, le modèle
+    a répondu sans chercher.
 """
 
 import json
@@ -50,8 +47,9 @@ load_dotenv()
 # Adresse de SearXNG (valeur par défaut si SEARXNG_URL n'est pas dans le .env).
 SEARXNG_URL = os.getenv("SEARXNG_URL", "http://127.0.0.1:8888")
 
-# Sécurité : nombre maximal de tours "le modèle demande un outil" avant d'abandonner,
-# pour éviter une boucle infinie si le modèle redemande des recherches sans fin.
+# Sécurité : nombre maximal de tours "le modèle demande un outil" avant de lui
+# imposer de répondre, pour éviter une boucle infinie si le modèle redemande des
+# recherches sans fin.
 MAX_ITERATIONS = 5
 
 # Description de l'outil, envoyée au modèle à chaque requête. C'est ce texte qui
@@ -104,12 +102,21 @@ def web_search(query: str, max_results: int = 5) -> str:
     )
 
 
-def chat(question: str) -> str:
-    """Pose une question au modèle, qui peut utiliser web_search, et renvoie sa réponse."""
+def run_agent(messages: list[dict]) -> tuple[str, list[str]]:
+    """Envoie une conversation au modèle, qui peut utiliser web_search.
+
+    Renvoie un tuple (réponse, requêtes) :
+      - réponse  : le texte de la réponse finale du modèle ;
+      - requêtes : la liste des recherches web lancées (vide si le modèle a
+                   répondu sans chercher).
+
+    `messages` est l'historique au format OpenAI, par exemple
+    [{"role": "user", "content": "..."}]. La liste est modifiée en place : les
+    demandes d'outil et leurs résultats y sont ajoutés au fil des tours.
+    """
     client = get_client()
     model = os.environ["LLM_LAB_MODEL"]
-    # "messages" est l'historique de la conversation envoyé au modèle à chaque appel.
-    messages = [{"role": "user", "content": question}]
+    queries: list[str] = []  # les recherches effectivement lancées
 
     for _ in range(MAX_ITERATIONS):
         # On envoie la conversation + la description des outils disponibles.
@@ -120,7 +127,7 @@ def chat(question: str) -> str:
 
         # Cas 1 : pas de demande d'outil -> c'est la réponse finale.
         if not message.tool_calls:
-            return message.content
+            return message.content or "", queries
 
         # Cas 2 : le modèle demande un ou plusieurs outils. On ajoute sa demande à
         # l'historique, puis on exécute chaque recherche et on ajoute le résultat
@@ -128,6 +135,7 @@ def chat(question: str) -> str:
         messages.append(message)
         for call in message.tool_calls:
             args = json.loads(call.function.arguments)  # ex. {"query": "..."}
+            queries.append(args.get("query", ""))
             print(f"[tool] web_search({args.get('query')!r})", file=sys.stderr)
             messages.append(
                 {
@@ -139,12 +147,9 @@ def chat(question: str) -> str:
         # La boucle recommence : le modèle voit maintenant les résultats et peut
         # soit répondre, soit demander une nouvelle recherche.
 
-    return "Nombre maximal d'appels d'outils atteint."
-
-
-# Ce bloc ne s'exécute que si on lance le fichier directement (python websearch.py ...),
-# pas quand il est importé depuis un autre script.
-if __name__ == "__main__":
-    # La question est tout ce qui suit le nom du fichier dans la commande.
-    question = " ".join(sys.argv[1:]) or "Quelle est la dernière version de Python ?"
-    print(chat(question))
+    # Trop de recherches : on interdit les outils (tool_choice="none") pour forcer
+    # le modèle à répondre avec ce qu'il a déjà trouvé.
+    response = client.chat.completions.create(
+        model=model, messages=messages, tools=TOOLS, tool_choice="none"
+    )
+    return response.choices[0].message.content or "", queries

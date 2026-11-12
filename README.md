@@ -1,14 +1,15 @@
-# LLM llm.lab avec recherche web
+# Classification d'enseignes avec llm.lab et recherche web
 
-Un client OpenAI branché sur le provider **llm.lab** (SSP Cloud), auquel on ajoute un
-outil de recherche web : le modèle décide lui-même de chercher sur le web (function
-calling) et répond à partir des résultats. llm.lab ne propose pas cet outil, donc la
+Classe un nom d'enseigne de magasin dans une nomenclature de magasins
+(`nmcl_magasins.csv`) grâce à un LLM du provider **llm.lab** (SSP Cloud), auquel on ajoute
+un outil de recherche web : le modèle décide lui-même de chercher sur le web (function
+calling) quand l'enseigne lui est inconnue, et répond à partir des résultats. llm.lab ne propose pas cet outil, donc la
 recherche est assurée par une instance locale de [SearXNG](https://github.com/searxng/searxng).
 
 ## Fonctionnement
 
 ```
-question -> modèle llm.lab --(besoin du web ?)--> web_search -> SearXNG -> résultats
+prompt -> modèle llm.lab --(besoin du web ?)--> web_search -> SearXNG -> résultats
                  ^                                                          |
                  +-------------------- réponse finale <---------------------+
 ```
@@ -18,18 +19,22 @@ question -> modèle llm.lab --(besoin du web ?)--> web_search -> SearXNG -> rés
 | Fichier             | Rôle                                                                 |
 |---------------------|----------------------------------------------------------------------|
 | `client.py`         | Crée le client OpenAI configuré pour llm.lab (`get_client()`)        |
-| `websearch.py`      | Outil `web_search` + boucle de tool calls (`chat()`)                 |
+| `classify.py`       | Commande de classification d'une enseigne (`uv run classify.py ...`) |
+| `prompts/classification.txt` | Le prompt envoyé au modèle (modifiable sans toucher au code) |
+| `websearch.py`      | Outil `web_search` + boucle de tool calls (`run_agent()`)            |
+| `nmcl_magasins.csv` | La nomenclature de magasins (`code;libellé`)                         |
+| `shops.csv`         | Enseignes à classer (`libelle;city`), pour les futurs traitements    |
 | `setup_searxng.sh`  | Installe SearXNG depuis les sources (sans Docker) et le lance        |
 | `.env.example`      | Modèle du fichier `.env` à créer                                     |
-| `requirements.txt`  | Dépendances Python                                                   |
+| `pyproject.toml`    | Dépendances Python (installées par `uv sync`)                        |
+| `uv.lock`           | Versions exactes des dépendances (généré par uv)                     |
 
 ## Installation
 
 Prérequis : Python 3.10+, [`uv`](https://docs.astral.sh/uv/), `git`, un accès internet.
 
 ```bash
-uv venv                   # crée l'environnement .venv
-uv pip install -r requirements.txt
+uv sync                   # crée .venv et installe les dépendances (pyproject.toml)
 
 cp .env.example .env      # puis renseigne ta clé API llm.lab dans .env
 ./setup_searxng.sh        # installe et lance SearXNG (première fois : quelques minutes)
@@ -47,15 +52,42 @@ Variables du `.env` :
 ## Utilisation
 
 ```bash
-uv run websearch.py "Quelle est la dernière version de Python ?"
+uv run classify.py "ELECTRO DEPOT" --city 57
+uv run classify.py "AIR BNB"
 ```
 
-Quand le modèle fait une recherche, la ligne `[tool] web_search(...)` s'affiche. Depuis
-un autre script :
+Un appel à la fois : une enseigne par exécution, la ville (`--city`) est optionnelle.
+Résultat :
+
+```json
+{
+  "code": "222",
+  "libelle": "Grande surface spécialisée dans l’équipement de la maison",
+  "justification": "...",
+  "recherche_web": {
+    "lancee": false,
+    "requetes": []
+  }
+}
+```
+
+Le champ `recherche_web` indique si le modèle a lancé une recherche web (`lancee`) et
+avec quelles requêtes (`requetes`).
+
+Le code renvoyé par le modèle est vérifié contre la nomenclature (le libellé en est
+recopié) ; sinon la commande échoue avec un message d'erreur et la réponse brute.
+Quand le modèle fait une recherche web, la ligne `[tool] web_search(...)` s'affiche.
+
+Pour changer la façon dont le modèle classe (règles de choix, usage de la recherche,
+format), modifie `prompts/classification.txt` : les mots `$nomenclature`, `$libelle` et
+`$ville` sont remplacés par le code, ne les supprime pas.
+
+Depuis un autre script Python, la boucle LLM + recherche est réutilisable ; elle renvoie
+la réponse et la liste des requêtes lancées :
 
 ```python
-from websearch import chat
-print(chat("Ta question"))
+from websearch import run_agent
+reponse, requetes = run_agent([{"role": "user", "content": "Ta question"}])
 ```
 
 Pour un simple test du client sans recherche web : `uv run client.py`.

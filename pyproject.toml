@@ -1,0 +1,11 @@
+[project]
+name = "llm-lab-websearch"
+version = "0.1.0"
+description = "Client OpenAI pour llm.lab avec outil de recherche web (SearXNG)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "openai",
+    "python-dotenv",
+    "requests",
+]
