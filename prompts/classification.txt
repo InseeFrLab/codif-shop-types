@@ -9,8 +9,13 @@ ENSEIGNE À CLASSER
 La ville peut être vide ou inexacte (par exemple un simple nombre) : ne t'y fie que si elle est cohérente.
 
 UTILISATION DE L'OUTIL DE RECHERCHE WEB
-- Si tu ne connais pas l'enseigne avec certitude, ou si le nom est ambigu, utilise l'outil web_search pour savoir quelle est son activité (3 recherches au maximum, avec des requêtes courtes et précises, par exemple le nom suivi de la ville).
+- Si tu ne connais pas l'enseigne avec certitude, ou si le nom est ambigu, utilise l'outil web_search (3 recherches au maximum).
 - Si l'activité est évidente à partir du nom, ne fais pas de recherche.
+- Forme de la requête : écris le nom exact de l'enseigne suivi de la ville, et rien d'autre. N'ajoute aucun mot comme « activité », « magasin », « entreprise » ou « société » : ils orientent le moteur vers des résultats génériques, surtout quand le nom est un mot courant.
+    Bon : MK2 Paris
+    Mauvais : MK2 Paris activité
+- Si la ville est vide ou inexacte, cherche le nom de l'enseigne seul.
+- Ne fais une deuxième recherche que si la première ne permet pas de conclure. Dans ce cas seulement, tu peux essayer une variante (autre orthographe, nom entre guillemets, ou un mot de contexte).
 
 RÈGLES DE CHOIX
 - Choisis le code le plus précis que tu peux justifier.

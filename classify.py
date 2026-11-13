@@ -16,12 +16,16 @@ STRUCTURE DU FICHIER
     - main              : lecture des arguments, appel du modèle, affichage
 
 PRÉREQUIS
-    - SearXNG doit tourner (./setup_searxng.sh) et le .env doit être rempli.
+    - Le .env doit être rempli, et le fournisseur de recherche choisi doit être
+      disponible : SearXNG lancé (./setup_searxng.sh) ou SERPER_API_KEY renseignée.
 
 UTILISATION
     uv run classify.py "ELECTRO DEPOT" --city 57
     uv run classify.py "AIR BNB"
+    uv run classify.py "MK2" --city PARIS --search-provider serper
     Un seul appel à la fois : un nom d'enseigne par exécution.
+    Le fournisseur de recherche (searxng ou serper) se choisit avec l'option
+    --search-provider ou la variable SEARCH_PROVIDER du .env.
 """
 
 import argparse
@@ -32,6 +36,7 @@ import sys
 from pathlib import Path
 from string import Template
 
+from search_providers import PROVIDERS, check_provider, resolve_provider
 from websearch import run_agent
 
 # Les chemins sont relatifs à ce fichier, pour fonctionner quel que soit le
@@ -101,11 +106,26 @@ def main() -> int:
         default=DEFAULT_NOMENCLATURE,
         help="fichier CSV de la nomenclature (défaut : nmcl_magasins.csv)",
     )
+    parser.add_argument(
+        "--search-provider",
+        choices=list(PROVIDERS),
+        help="fournisseur de recherche web (défaut : variable SEARCH_PROVIDER du "
+        ".env, sinon searxng)",
+    )
     args = parser.parse_args()
+
+    # On vérifie le fournisseur (nom, clé API) avant d'appeler le modèle, pour
+    # échouer tout de suite avec un message clair.
+    provider = resolve_provider(args.search_provider)
+    try:
+        check_provider(provider)
+    except ValueError as e:
+        print(f"Erreur : {e}.", file=sys.stderr)
+        return 1
 
     nomenclature = load_nomenclature(args.nomenclature)
     prompt = build_prompt(args.libelle, args.city, nomenclature)
-    answer, searches = run_agent([{"role": "user", "content": prompt}])
+    answer, searches = run_agent([{"role": "user", "content": prompt}], provider)
 
     try:
         result = parse_answer(answer, nomenclature)
@@ -113,9 +133,14 @@ def main() -> int:
         print(f"Erreur : {e}.\nRéponse brute du modèle :\n{answer}", file=sys.stderr)
         return 1
 
-    # Indique si le modèle a lancé une recherche web et détaille chaque recherche
-    # (requête, moteurs utilisés ou en échec, URLs des résultats retenus).
-    result["recherche_web"] = {"lancee": bool(searches), "recherches": searches}
+    # Indique le fournisseur de recherche, si le modèle a lancé une recherche web et
+    # détaille chaque recherche (requête, moteurs utilisés ou en échec, URLs des
+    # résultats retenus).
+    result["recherche_web"] = {
+        "fournisseur": provider,
+        "lancee": bool(searches),
+        "recherches": searches,
+    }
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
