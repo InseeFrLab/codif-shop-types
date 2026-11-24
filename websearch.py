@@ -136,8 +136,21 @@ def web_search(
     return text, details
 
 
+def _record_usage(stats: dict | None, response) -> None:
+    """Cumule le nombre d'appels et de tokens dans `stats` (si fourni)."""
+    if stats is None:
+        return
+    stats["calls"] = stats.get("calls", 0) + 1
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        stats["tokens"] = stats.get("tokens", 0) + (getattr(usage, "total_tokens", 0) or 0)
+
+
 def run_agent(
-    messages: list[dict], provider: str | None = None
+    messages: list[dict],
+    provider: str | None = None,
+    stats: dict | None = None,
+    verbose: bool = True,
 ) -> tuple[str, list[dict]]:
     """Envoie une conversation au modèle, qui peut utiliser web_search.
 
@@ -153,6 +166,10 @@ def run_agent(
 
     `provider` : fournisseur de recherche ("searxng" ou "serper") ; sinon la
     variable SEARCH_PROVIDER du .env, sinon "searxng".
+
+    `stats` (optionnel) : dictionnaire que la fonction remplit avec "calls" (nombre
+    d'appels au modèle) et "tokens" (total de tokens consommés).
+    `verbose` : False supprime l'affichage "[tool] web_search(...)" (utile en parallèle).
     """
     provider = resolve_provider(provider)
     check_provider(provider)  # échoue tout de suite si la clé ou le nom est invalide
@@ -165,6 +182,7 @@ def run_agent(
         response = client.chat.completions.create(
             model=model, messages=messages, tools=TOOLS
         )
+        _record_usage(stats, response)
         message = response.choices[0].message
 
         # Cas 1 : pas de demande d'outil -> c'est la réponse finale.
@@ -177,7 +195,8 @@ def run_agent(
         messages.append(message)
         for call in message.tool_calls:
             args = json.loads(call.function.arguments)  # ex. {"query": "..."}
-            print(f"[tool] web_search({args.get('query')!r})", file=sys.stderr)
+            if verbose:
+                print(f"[tool] web_search({args.get('query')!r})", file=sys.stderr)
             text, details = web_search(args.get("query", ""), provider)
             searches.append(details)  # trace pour l'appelant ; le modèle ne la voit pas
             messages.append(
@@ -191,4 +210,5 @@ def run_agent(
     response = client.chat.completions.create(
         model=model, messages=messages, tools=TOOLS, tool_choice="none"
     )
+    _record_usage(stats, response)
     return response.choices[0].message.content or "", searches

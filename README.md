@@ -21,7 +21,11 @@ prompt -> modèle llm.lab --(besoin du web ?)--> web_search -> SearXNG ou Serper
 | Fichier             | Rôle                                                                 |
 |---------------------|----------------------------------------------------------------------|
 | `client.py`         | Crée le client OpenAI configuré pour llm.lab (`get_client()`)        |
-| `classify.py`       | Commande de classification d'une enseigne (`uv run classify.py ...`) |
+| `run.py`            | **Point d'entrée** : code un fichier CSV d'enseignes (regex puis LLM + web) |
+| `rules.py`          | Règles regex de codage (`coder()`), code `00` = hors champ           |
+| `evaluate_rules.py` | Contrôle des règles sur la liste annotée et la liste à coder         |
+| `classification.py` | Classification LLM d'une enseigne (prompt, validation du code)       |
+| `classify.py`       | Classification d'une seule enseigne par le LLM (`uv run classify.py ...`) |
 | `prompts/classification.txt` | Le prompt envoyé au modèle (modifiable sans toucher au code) |
 | `websearch.py`      | Outil `web_search` + boucle de tool calls (`run_agent()`)            |
 | `search_providers.py` | Les fournisseurs de recherche : SearXNG et Serper                  |
@@ -69,6 +73,23 @@ Le choix se fait, par ordre de priorité : option `--search-provider` de la comm
 variable `SEARCH_PROVIDER` du `.env`, sinon `searxng`. Si le fournisseur choisi n'est
 pas utilisable (nom inconnu, clé Serper absente), la commande s'arrête avant tout appel
 au modèle. Pour ajouter un autre fournisseur, voir l'en-tête de `search_providers.py`.
+
+## Coder un fichier d'enseignes (`run.py`)
+
+```bash
+uv run run.py shops.csv --dry-run     # combien d'appels LLM seraient faits (aucun appel)
+uv run run.py shops.csv --no-llm      # regex seulement
+uv run run.py shops.csv --limit 5     # essai réel : 5 appels LLM au plus
+uv run run.py shops.csv               # tout le fichier -> shops_coded.csv
+```
+
+Entrée : CSV `libelle;city` (comme `shops.csv`). Sortie : mêmes colonnes + `code`, `store_type`,
+`method` (`regex` / `llm` / `error` / `pending`), `regex_status` (`code` / `hors_champ` / `ambigu` /
+`aucune`), `regex_rules`, `regex_tier`, `regex_candidate_codes`, `llm_model`, `llm_search_provider`,
+`llm_websearch` (`true` si le modèle a cherché sur le web), `llm_search_count`, `llm_queries`,
+`llm_justification`, `llm_tokens`, `error` (+ `trace_json` avec `--trace`). Les libellés qui ne sont pas
+une enseigne (« A DOMICILE », « ILLISIBLE »...) reçoivent le code `00` par les regex, sans appel LLM.
+Les résultats LLM sont gardés dans `<sortie>.cache.jsonl` : relancer la commande reprend où elle s'est arrêtée.
 
 ## Utilisation
 
