@@ -104,6 +104,9 @@ MARQUES_GD = (r"E ?LECLERC|LECLERC|CARREFOUR(?: MARKET| CITY| CONTACT| EXPRESS)?
               r"LIDL|ALDI|MONOPRIX|NETTO|LEADER PRICE|MATCH|SIMPLY(?: MARKET)?|FRANPRIX|COLRUYT|SUPERMARCHE|HYPERMARCHE|MILENIS|SUPECO|SPAR|VIVAL|PROXI|ATAC|"
               r"ECOMARCHE|SHOPI|KAUFLAND|NORMA|SCORE|JUMBO")
 MOTS_STATION = r"STATION|CARBURANTS?|POMPE|ESSENCE|PETRO|GAZOLE|GASOIL"
+# Mots qui désignent un commerce : avec un mot de service (« LA BOUTIQUE DU COIFFEUR »), le
+# libellé peut être un magasin de produits pour ce métier, pas le service lui-même -> au LLM.
+MOTS_COMMERCE = r"BOUTIQUES?|COMPTOIRS?|MAGASINS?|FOURNITURES?|PRODUITS?|GROSSISTES?|MATERIELS?"
 add("235", r"^(?!.*\b(?:LAVAGE|SKI)\b)(?=.*\b(?:" + MOTS_STATION + r")\b)(?=.*\b(?:" + MARQUES_GD + r")\b)", 0,
     ref="Station Leclerc, Station Carrefour, Station Intermarché, Station supermarché, Leclerc Station (+ toute enseigne de supermarché, dans les deux ordres)")
 add("235", W(r"STATION (?:SERVICE|ESSENCE|CARBURANTS?|D ESSENCE|(?:DE |D )?AUTOROUTES?|BP|ESSO|SHELL|AVIA|TOTAL ?(?:ENERGIES?)?|ENGEN|VITO)",
@@ -413,7 +416,7 @@ add("622", r"^(?:LA |LE )?PISCINES?\b(?! PLUS| DESJOYAUX)", ref="Piscine (en dé
 add("622", W("FOOTBALL"), NIVEAU_FAIBLE, "B", ref="ext. (Club de foot)")
 
 # --- 623 Soins personnels
-add("623", W("BODY MINUTE", "CENTRE DE BEAUTE", "COIFFEURS?", "COIFFEUSES?", "COIFFURE", "ESTHETICIENNE", "FABIO SALSA", "FRANCK PROVOST", "INSTITUT DE BEAUTE",
+add("623", r"^(?!.*\b(?:" + MOTS_COMMERCE + r")\b).*" + W("BODY MINUTE", "CENTRE DE BEAUTE", "COIFFEURS?", "COIFFEUSES?", "COIFFURE", "ESTHETICIENNE", "FABIO SALSA", "FRANCK PROVOST", "INSTITUT DE BEAUTE",
              "MANUCURE", "ONGLERIE", "SALON DE BEAUTE", "SALON DE COIFFURE", "SALON ESTHETIQUE", "TATOUEUR"),
     ref="Body Minute, Coiffeur, Coiffure, Esthéticienne, Franck Provost, Institut de beauté, Onglerie, Salon de coiffure, Tatoueur...")
 add("623", W("BARBIER", r"BARBER ?SHOP"), 1, "B", ref="ext.")
@@ -592,6 +595,7 @@ add("652", W("DGFIP", "CPAM", "GAZ DE BORDEAUX", "ANTARGAZ", "OHM ENERGIE"), 1, 
 add("652", X("CAF"), 1, "B", ref="ext. (analogie Administration)")
 add("631", W("CORIOLIS", "NRJ MOBILE", "PRIXTEL"), 1, "B", ref="ext. (analogie Sfr, Bouygues)")
 add("653", W("BRED", "N26", "SOFINCO", r"SWISS ?LIFE", "PACIFICA", r"AG2R(?: LA MONDIALE)?"), 1, "B", ref="ext. (analogie Bnp, Cetelem, Cofidis, Axa, Groupama)")
+add("129", X("CAVES?", r"CAVE DE VINS?"), 1, "B", ref="ext. (libellé exact 'Cave' = caviste ; analogie Caviste, Cave à vin)")
 add("653", r"^APRIL\b", 1, "B", ref="ext. (assurance ; analogie Axa)")
 add("659", W("LAFORET", "FONCIA", r"PARIONS(?: SPORT)?"), 1, "B", ref="ext. (analogie Agence immobilière, Syndic, Française des jeux, Loto)")
 add("611", W("BIOGROUP", "SYNLAB", "IMAGERIE MEDICALE"), 1, "B", ref="ext. (analogie Laboratoire médical, Centre radiologie)")

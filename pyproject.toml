@@ -5,6 +5,7 @@ description = "Client OpenAI pour llm.lab avec outil de recherche web (SearXNG)"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "duckdb>=1.5.6",
     "openai",
     "python-dotenv",
     "requests",

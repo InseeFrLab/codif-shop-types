@@ -20,13 +20,13 @@ import random
 import sys
 from pathlib import Path
 
-from common.paths import DATA_DIR
+from llm.classification import load_nomenclature
 from rules import REGLES, coder
 
 
 def lire_reference(chemin: Path) -> list[tuple[str, str, str]]:
     """[(identifiant, code, libellé)] ; ignore les codes absents de la nomenclature."""
-    nmcl = {l.split(";")[0].strip() for l in (DATA_DIR / "nmcl_magasins.csv").read_text(encoding="utf-8").splitlines()[1:]}
+    nmcl = set(load_nomenclature())
     out = []
     with open(chemin, encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f, delimiter=";"):

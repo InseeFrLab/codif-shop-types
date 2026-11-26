@@ -30,6 +30,7 @@ prompt -> modèle llm.lab --(besoin du web ?)--> web_search -> SearXNG ou Serper
 | `llm/websearch.py`  | Outil `web_search` + boucle de tool calls (`run_agent()`)            |
 | `common/search_providers.py` | Les fournisseurs de recherche : SearXNG et Serper           |
 | `common/setup_searxng.sh` | Installe SearXNG depuis les sources (sans Docker) et le lance  |
+| `sampling/draw_sample.py` | Tirage aléatoire reproductible d'un échantillon de la liste à coder, enregistré sur le S3 (`uv run -m sampling.draw_sample`) |
 | `common/paths.py`   | Chemins communs (`ROOT`, `DATA_DIR`)                                 |
 | `data/`             | Données (voir « Données sources (S3) ») : `shops.csv` (`libelle;city`, exemple), fichiers copiés du S3, sorties du codage (`*_coded.csv`, `sorties/`) |
 | `docs/processus.excalidraw` | Schéma du processus complet (inputs, regex, LLM + web, sauvegarde) ; à ouvrir avec excalidraw.com ou l'extension VS Code Excalidraw |
@@ -60,6 +61,19 @@ Points d'attention :
   ne les produit.
 - Le code `00` (« hors champ » : le libellé n'est pas une enseigne) est propre à ce projet ; il
   n'est pas dans la nomenclature BdF.
+
+### Tirer un échantillon
+
+```bash
+uv run -m sampling.draw_sample                      # 100 lignes, graine 42
+uv run -m sampling.draw_sample --size 500 --seed 7
+```
+
+Tire des lignes au hasard dans `liste_magasins_a_coder.parquet` (avec DuckDB) et les enregistre
+dans `samples/liste_magasins_a_coder_n<taille>_seed<graine>_<JJMMAAAA>.parquet`, dans le même
+dossier S3. Le tirage est reproductible : même graine, même échantillon. Pour une même graine,
+l'échantillon de 100 est inclus dans celui de 200. Les accès S3 viennent des variables `AWS_*`
+du SSP Cloud.
 
 ## Installation
 
@@ -107,6 +121,38 @@ uv run run.py data/shops.csv --no-llm      # regex seulement
 uv run run.py data/shops.csv --limit 5     # essai réel : 5 appels LLM au plus
 uv run run.py data/shops.csv               # tout le fichier -> data/shops_coded.csv
 ```
+
+### Sur un Parquet du S3
+
+```bash
+S3=s3://projet-budget-famille/data/shop-types-classification
+uv run run.py $S3/samples/liste_magasins_a_coder_n200_seed18_26112026.parquet --dry-run
+uv run run.py $S3/samples/liste_magasins_a_coder_n200_seed18_26112026.parquet --no-cache
+```
+
+- Le libellé et la commune sont lus dans les colonnes `MAG_DEP` et `COM_DEP` (modifiable avec
+  `--col-label` / `--col-city`).
+- La sortie est un Parquet au même nom suivi de `_coded`, dans un dossier par run :
+  `$S3/runs/run_JJMMAAAA_HHMM_SS/<nom>_coded.parquet` (`-o` pour écrire ailleurs). Les colonnes
+  d'origine gardent leur type ; `llm_websearch` est un booléen, `llm_search_count` et `llm_tokens`
+  des entiers, les cases vides valent `null`.
+- Cache : comme chaque run a son propre dossier, le cache LLM est gardé en local, lié au fichier
+  d'entrée (`data/cache/<nom>_coded.cache.jsonl`). **`--no-cache`** le désactive : tout est
+  reclassé à chaque run, ce qui convient à la phase d'évaluation.
+- La nomenclature est lue sur le S3 (`$S3/nmcl_magasins.csv`, Windows-1252), une fois par run, puis
+  injectée dans chaque prompt.
+
+### Suivi d'un run et options utiles
+
+- Une ligne s'affiche à chaque réponse du LLM (code, nombre de recherches, durée de l'appel), et
+  une ligne de suivi au moins toutes les 30 s : `… 12/8387 terminés, 4 en cours, 0 erreur(s),
+  6 min écoulées, fin estimée dans ~2 h 10`.
+- Un appel au modèle qui ne répond pas est abandonné au bout de 120 s (variable
+  `LLM_LAB_TIMEOUT` du `.env` pour changer ce délai) : la ligne passe en `error` au lieu de
+  bloquer le run.
+- `--no-websearch` : le modèle répond sans outil de recherche (aucun appel SearXNG ni Serper,
+  donc aucun crédit consommé). Utile pour tester, ou pour comparer avec/sans recherche ;
+  `llm_search_provider` vaut alors `none`.
 
 Entrée : CSV `libelle;city` (comme `data/shops.csv`). Sortie : mêmes colonnes + `code`, `store_type`,
 `method` (`regex` / `llm` / `error` / `pending`), `regex_status` (`code` / `hors_champ` / `ambigu` /

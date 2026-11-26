@@ -9,7 +9,9 @@ PRINCIPE
            - "ambigu"     : des règles se contredisent  } -> envoyés au LLM
            - "aucune"     : aucune règle ne matche      }    (classification.py, avec recherche web)
       2. le LLM classe les couples (libellé, commune) restants. Chaque résultat est
-         écrit dans <sortie>.cache.jsonl : relancer la commande reprend où elle s'est arrêtée.
+         écrit dans un cache : relancer la commande reprend où elle s'est arrêtée
+         (CSV : <sortie>.cache.jsonl ; Parquet : data/cache/<nom>_coded.cache.jsonl ;
+         --no-cache : pas de cache). La nomenclature est lue sur le S3, une fois par run.
     Le fichier de sortie reprend toutes les colonnes d'entrée, plus les colonnes ci-dessous.
 
 COLONNES AJOUTÉES
@@ -31,6 +33,10 @@ UTILISATION
     uv run run.py data/shops.csv --no-llm              # regex seulement
     uv run run.py data/shops.csv --limit 5             # au plus 5 appels LLM (pour un essai)
     uv run run.py data/shops.csv --workers 8 --search-provider serper
+    Parquet sur le S3 (colonnes MAG_DEP / COM_DEP par défaut) -> Parquet dans
+    <S3>/runs/run_JJMMAAAA_HHMM_SS/<nom>_coded.parquet :
+    uv run run.py s3://projet-budget-famille/data/shop-types-classification/samples/<échantillon>.parquet
+    uv run run.py s3://.../<échantillon>.parquet --no-cache   # phase d'évaluation : sans cache LLM
     Fichier de la BDF (TSV, latin-1) :
     uv run run.py liste_magasins_a_coder.csv --delimiter '\\t' --encoding latin-1 \\
         --col-label 1 --col-city 2      # (l'en-tête de ce fichier est décalé : colonne 0 = numéro de ligne)
@@ -45,13 +51,17 @@ import csv
 import json
 import os
 import sys
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import tempfile
+import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from datetime import datetime
 from pathlib import Path
 
 import rules
-from llm.classification import DEFAULT_NOMENCLATURE, classify_with_llm, load_nomenclature
+from common.paths import DATA_DIR
+from common.s3 import S3_DIR, connect
 from common.search_providers import PROVIDERS, check_provider, resolve_provider
+from llm.classification import DEFAULT_NOMENCLATURE, classify_with_llm, load_nomenclature
 
 ADDED_COLUMNS = [
     "code", "store_type", "method",
@@ -74,18 +84,62 @@ def read_input(path: Path, delimiter: str, encoding: str, col_label: str | None,
     width = max(len(header), *(len(r) for r in body)) if body else len(header)
     header = header + [""] * (width - len(header))
     body = [r + [""] * (width - len(r)) for r in body]  # lignes plus courtes que l'en-tête
+    return header, body, column_index(header, width, col_label, 0), column_index(header, width, col_city, 1)
 
-    def column_index(spec: str | None, default: int | None) -> int | None:
-        """`spec` = nom de colonne, ou position (0 = première) quand l'en-tête est inutilisable."""
-        if spec is None:
-            return default if default is not None and default < width else None
-        if spec in header:
-            return header.index(spec)
-        if spec.isdigit() and int(spec) < width:
-            return int(spec)
-        raise SystemExit(f"Colonne {spec!r} introuvable (en-tête : {header})")
 
-    return header, body, column_index(col_label, 0), column_index(col_city, 1)
+def column_index(header: list[str], width: int, spec: str | None, default: int | None = None) -> int | None:
+    """`spec` = nom de colonne, ou position (0 = première) quand l'en-tête est inutilisable."""
+    if spec is None:
+        return default if default is not None and default < width else None
+    if spec in header:
+        return header.index(spec)
+    if spec.isdigit() and int(spec) < width:
+        return int(spec)
+    raise SystemExit(f"Colonne {spec!r} introuvable (en-tête : {header})")
+
+
+def read_parquet_input(con, path: str):
+    """Lit un Parquet (s3:// ou local). Renvoie (en-tête, lignes en texte), dans l'ordre du fichier."""
+    con.execute("SELECT * EXCLUDE file_row_number FROM read_parquet(?, file_row_number = true) ORDER BY file_row_number", [path])
+    header = [d[0] for d in con.description]
+    body = [["" if v is None else str(v) for v in row] for row in con.fetchall()]
+    if not body:
+        raise SystemExit(f"Fichier vide : {path}")
+    return header, body
+
+
+def write_parquet_output(con, input_path: str, output: str, added_rows: list[dict]) -> None:
+    """Écrit le Parquet de sortie : colonnes d'origine (avec leurs types) + colonnes ajoutées.
+
+    Les colonnes ajoutées passent par un JSONL temporaire, joint au fichier d'entrée sur le
+    numéro de ligne.
+    """
+    def typed(values: dict) -> dict:
+        out = {k: (v if v != "" else None) for k, v in values.items()}
+        for k in ("llm_search_count", "llm_tokens"):
+            out[k] = int(out[k]) if out[k] is not None else None
+        out["llm_websearch"] = {"true": True, "false": False}.get(out["llm_websearch"])
+        return out
+
+    columns = {c: "VARCHAR" for c in added_rows[0]}
+    columns.update(llm_search_count="INTEGER", llm_tokens="INTEGER", llm_websearch="BOOLEAN")
+    with tempfile.NamedTemporaryFile("w", suffix=".jsonl", encoding="utf-8", delete=False) as tmp:
+        for i, values in enumerate(added_rows):
+            tmp.write(json.dumps({"__row": i, **typed(values)}, ensure_ascii=False) + "\n")
+    try:
+        cols_sql = "{" + ", ".join(f"'{c}': '{t}'" for c, t in {"__row": "BIGINT", **columns}.items()) + "}"
+        added = ", ".join(f"a.{c}" for c in columns)
+        con.execute(f"""
+            COPY (
+                SELECT s.* EXCLUDE (file_row_number), {added}
+                FROM read_parquet(?, file_row_number = true) s
+                JOIN read_json(?, format = 'newline_delimited', columns = {cols_sql}) a
+                  ON s.file_row_number = a.__row
+                ORDER BY s.file_row_number
+            ) TO '{output}' (FORMAT parquet)
+        """, [input_path, tmp.name])
+    finally:
+        os.unlink(tmp.name)
 
 
 # --------------------------------------------------------------------------------------
@@ -107,33 +161,70 @@ def load_cache(path: Path) -> dict[tuple[str, str], dict]:
 # --------------------------------------------------------------------------------------
 # Passe LLM
 # --------------------------------------------------------------------------------------
-def run_llm_pass(keys, cache, cache_path, nomenclature, provider, workers) -> dict[tuple[str, str], dict]:
-    """Classe les couples (libellé, commune) avec le LLM. Renvoie {clé: résultat} (échecs inclus)."""
+def log(msg: str) -> None:
+    print(msg, file=sys.stderr, flush=True)
+
+
+def duration(seconds: float) -> str:
+    """Durée lisible : 42 s, 6 min, 2 h 10."""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds} s"
+    if seconds < 3600:
+        return f"{seconds // 60} min"
+    return f"{seconds // 3600} h {seconds % 3600 // 60:02d}"
+
+
+def run_llm_pass(keys, cache_path, nomenclature, provider, workers, websearch=True) -> dict[tuple[str, str], dict]:
+    """Classe les couples (libellé, commune) avec le LLM. Renvoie {clé: résultat} (échecs inclus).
+
+    Affichage en direct : une ligne par résultat, et une ligne de suivi au moins toutes les
+    HEARTBEAT secondes (avancement, appels en cours, estimation de la fin).
+    cache_path = None : rien n'est écrit dans le cache (option --no-cache).
+    """
+    HEARTBEAT = 30
+
+    def timed_call(label, city):
+        start = time.monotonic()
+        result = classify_with_llm(label, city, nomenclature, provider, websearch=websearch)
+        return result, time.monotonic() - start
+
     results: dict[tuple[str, str], dict] = {}
-    lock = threading.Lock()
-    done = 0
+    n_errors = 0
+    t0 = last_log = time.monotonic()
     executor = ThreadPoolExecutor(max_workers=workers)
-    futures = {executor.submit(classify_with_llm, label, city, nomenclature, provider): (label, city) for label, city in keys}
+    futures = {executor.submit(timed_call, label, city): (label, city) for label, city in keys}
+    pending = set(futures)
     try:
-        with open(cache_path, "a", encoding="utf-8") as cache_file:
-            for future in as_completed(futures):
-                key = futures[future]
-                result = future.result()  # classify_with_llm ne lève pas d'exception
-                result["provider"] = provider
-                with lock:
+        with open(cache_path or os.devnull, "a", encoding="utf-8") as cache_file:
+            while pending:
+                finished, pending = wait(pending, timeout=HEARTBEAT, return_when=FIRST_COMPLETED)
+                for future in finished:
+                    key = futures[future]
+                    result, seconds = future.result()  # classify_with_llm ne lève pas d'exception
+                    result["provider"] = provider if websearch else "none"
                     results[key] = result
-                    done += 1
-                    if not result["error"]:
+                    if result["error"]:
+                        n_errors += 1
+                    else:
                         cache_file.write(json.dumps({"key": list(key), "result": result}, ensure_ascii=False) + "\n")
                         cache_file.flush()
-                status = result["code"] or f"ERREUR ({result['error']})"
-                web = f"{len(result['searches'])} recherche(s)" if result["searches"] else "sans recherche"
-                print(f"[LLM {done}/{len(keys)}] {key[0]!r} ({key[1]!r}) -> {status} ; {web}", file=sys.stderr)
+                    status = result["code"] or f"ERREUR ({result['error']})"
+                    web = f"{len(result['searches'])} recherche(s)" if result["searches"] else "sans recherche"
+                    log(f"[LLM {len(results)}/{len(keys)}] {key[0]!r} ({key[1]!r}) -> {status} ; {web} ; {duration(seconds)}")
+                now = time.monotonic()
+                if pending and now - last_log >= HEARTBEAT:
+                    elapsed = now - t0
+                    eta = f", fin estimée dans ~{duration(elapsed / len(results) * len(pending))}" if results else ""
+                    log(f"  … {len(results)}/{len(keys)} terminés, {min(len(pending), workers)} en cours, "
+                        f"{n_errors} erreur(s), {duration(elapsed)} écoulées{eta}")
+                    last_log = now
     except KeyboardInterrupt:
-        print("\nInterruption : les résultats déjà obtenus sont conservés (reprise possible).", file=sys.stderr)
+        log("\nInterruption : les résultats déjà obtenus sont conservés (reprise possible).")
         executor.shutdown(wait=False, cancel_futures=True)
     else:
         executor.shutdown()
+    log(f"  passe LLM terminée : {len(results)} résultats, {n_errors} erreur(s), {duration(time.monotonic() - t0)}")
     return results
 
 
@@ -180,13 +271,14 @@ def build_output_values(regex: dict, llm: dict | None, nomenclature: dict[str, s
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Code les enseignes d'un fichier CSV : regex d'abord, LLM + recherche web ensuite.")
-    ap.add_argument("input", type=Path, help="fichier CSV : libellé de l'enseigne et commune (ex. shops.csv)")
-    ap.add_argument("-o", "--output", type=Path, help="fichier de sortie (défaut : <entrée>_coded.csv)")
+    ap.add_argument("input", help="fichier CSV local, ou Parquet (s3:// ou local) : libellé de l'enseigne et commune")
+    ap.add_argument("-o", "--output", help="fichier de sortie (défaut : <entrée>_coded.csv pour un CSV ; "
+                    "pour un Parquet, <S3>/runs/run_JJMMAAAA_HHMM_SS/<nom>_coded.parquet)")
     ap.add_argument("--delimiter", default=";", help="séparateur du fichier d'entrée et de sortie (défaut ';' ; '\\t' pour une tabulation)")
     ap.add_argument("--encoding", default="utf-8", help="encodage du fichier d'entrée (défaut utf-8 ; la sortie est en utf-8)")
-    ap.add_argument("--col-label", help="colonne du libellé : nom, ou position à partir de 0 (défaut : 1re colonne)")
-    ap.add_argument("--col-city", help="colonne de la commune : nom, ou position à partir de 0 (défaut : 2e colonne)")
-    ap.add_argument("--nomenclature", type=Path, default=DEFAULT_NOMENCLATURE, help="nomenclature (défaut : data/nmcl_magasins.csv)")
+    ap.add_argument("--col-label", help="colonne du libellé : nom, ou position à partir de 0 (défaut : 1re colonne ; MAG_DEP pour un Parquet)")
+    ap.add_argument("--col-city", help="colonne de la commune : nom, ou position à partir de 0 (défaut : 2e colonne ; COM_DEP pour un Parquet)")
+    ap.add_argument("--nomenclature", default=DEFAULT_NOMENCLATURE, help="nomenclature, s3:// ou locale (défaut : nmcl_magasins.csv du S3)")
     ap.add_argument("--tiers", nargs="+", default=["A", "B"], choices=["A", "B"], help="tiers de règles regex utilisés (défaut : A B)")
     ap.add_argument("--no-llm", action="store_true", help="regex seulement : les lignes non codées restent en 'pending'")
     ap.add_argument("--dry-run", action="store_true", help="affiche les comptes et le nombre d'appels LLM prévus, sans rien appeler ni écrire")
@@ -194,15 +286,32 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=4, help="appels LLM en parallèle (défaut 4)")
     ap.add_argument("--search-provider", choices=list(PROVIDERS), help="fournisseur de recherche web (défaut : SEARCH_PROVIDER du .env, sinon searxng)")
     ap.add_argument("--trace", action="store_true", help="ajoute la colonne trace_json (détail des recherches web)")
+    ap.add_argument("--no-websearch", action="store_true", help="le modèle répond sans l'outil de recherche web (aucun appel SearXNG/Serper)")
+    ap.add_argument("--no-cache", action="store_true", help="ni lecture ni écriture du cache LLM : tout est reclassé (phase d'évaluation)")
     args = ap.parse_args()
 
     delimiter = "\t" if args.delimiter == "\\t" else args.delimiter
-    output = args.output or args.input.with_name(args.input.stem + "_coded.csv")
-    cache_path = output.with_name(output.name + ".cache.jsonl")
     tiers = tuple(args.tiers)
-    nomenclature = load_nomenclature(args.nomenclature)
+    nomenclature = load_nomenclature(args.nomenclature)  # chargée une fois, injectée dans chaque prompt
 
-    header, body, i_label, i_city = read_input(args.input, delimiter, args.encoding, args.col_label, args.col_city)
+    parquet = args.input.endswith(".parquet")
+    if parquet:
+        # Sortie dans un dossier de run horodaté ; cache local lié au fichier d'entrée.
+        stem = Path(args.input).name.removesuffix(".parquet")
+        output = args.output or f"{S3_DIR}/runs/run_{datetime.now():%d%m%Y_%H%M_%S}/{stem}_coded.parquet"
+        cache_path = DATA_DIR / "cache" / f"{stem}_coded.cache.jsonl"
+        con = connect()
+        header, body = read_parquet_input(con, args.input)
+        i_label, i_city = (column_index(header, len(header), spec) for spec in (args.col_label or "MAG_DEP", args.col_city or "COM_DEP"))
+    else:
+        input_path = Path(args.input)
+        output = Path(args.output) if args.output else input_path.with_name(input_path.stem + "_coded.csv")
+        cache_path = output.with_name(output.name + ".cache.jsonl")
+        header, body, i_label, i_city = read_input(input_path, delimiter, args.encoding, args.col_label, args.col_city)
+    if args.no_cache:
+        cache_path = None
+    elif not args.dry_run:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
     labels = [r[i_label].strip() for r in body]
     cities = [r[i_city].strip() if i_city is not None else "" for r in body]
 
@@ -222,7 +331,7 @@ def main() -> int:
     keys = list(dict.fromkeys(
         (lab, cit) for lab, cit, r in zip(labels, cities, regex_results) if r["statut"] in ("ambigu", "aucune")
     ))
-    cache = load_cache(cache_path) if not args.dry_run else {}
+    cache = load_cache(cache_path) if cache_path and not args.dry_run else {}
     to_call = [k for k in keys if k not in cache]
     if args.limit is not None:
         to_call = to_call[: args.limit]
@@ -239,7 +348,8 @@ def main() -> int:
     if to_call and not args.no_llm:
         provider = resolve_provider(args.search_provider)
         try:
-            check_provider(provider)
+            if not args.no_websearch:
+                check_provider(provider)
             from llm.client import get_client
             get_client()  # vérifie LLM_LAB_API_KEY
             if not os.getenv("LLM_LAB_MODEL"):
@@ -247,21 +357,28 @@ def main() -> int:
         except (ValueError, RuntimeError) as e:
             print(f"Erreur : {e}.", file=sys.stderr)
             return 1
-        print(f"  appels LLM : {len(to_call)} (fournisseur de recherche : {provider}, {args.workers} en parallèle)", file=sys.stderr)
-        llm_results.update(run_llm_pass(to_call, cache, cache_path, nomenclature, provider, max(args.workers, 1)))
+        search = "sans recherche web" if args.no_websearch else f"fournisseur de recherche : {provider}"
+        log(f"  appels LLM : {len(to_call)} ({search}, {args.workers} en parallèle) ; "
+            f"un suivi s'affiche au moins toutes les 30 s")
+        llm_results.update(run_llm_pass(to_call, cache_path, nomenclature, provider, max(args.workers, 1), websearch=not args.no_websearch))
 
     # 4. Écriture du fichier de sortie
-    out_header = header + ADDED_COLUMNS + (["trace_json"] if args.trace else [])
-    method_counts = collections.Counter()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with open(output, "w", encoding="utf-8", newline="") as f:
-        writer = csv.writer(f, delimiter=delimiter)
-        writer.writerow(out_header)
-        for row, label, city, regex in zip(body, labels, cities, regex_results):
-            llm = None if regex["statut"] in ("code", "hors_champ") else llm_results.get((label, city))
-            values = build_output_values(regex, llm, nomenclature, args.trace)
-            method_counts[values["method"]] += 1
-            writer.writerow(row + [values[c] for c in ADDED_COLUMNS] + ([values["trace_json"]] if args.trace else []))
+    added_columns = ADDED_COLUMNS + (["trace_json"] if args.trace else [])
+    added_rows = []
+    for label, city, regex in zip(labels, cities, regex_results):
+        llm = None if regex["statut"] in ("code", "hors_champ") else llm_results.get((label, city))
+        values = build_output_values(regex, llm, nomenclature, args.trace)
+        added_rows.append({c: "" if values[c] is None else str(values[c]) for c in added_columns})
+    method_counts = collections.Counter(v["method"] for v in added_rows)
+    if parquet:
+        write_parquet_output(con, args.input, output, added_rows)
+    else:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with open(output, "w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f, delimiter=delimiter)
+            writer.writerow(header + added_columns)
+            for row, values in zip(body, added_rows):
+                writer.writerow(row + [values[c] for c in added_columns])
     print(f"\nFichier écrit : {output}", file=sys.stderr)
     print("  méthode : " + ", ".join(f"{m} {n}" for m, n in sorted(method_counts.items())), file=sys.stderr)
     return 0

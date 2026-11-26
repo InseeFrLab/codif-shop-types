@@ -31,7 +31,6 @@ UTILISATION
 import argparse
 import json
 import sys
-from pathlib import Path
 
 from llm.classification import DEFAULT_NOMENCLATURE, build_prompt, load_nomenclature, parse_answer
 from common.search_providers import PROVIDERS, check_provider, resolve_provider
@@ -46,9 +45,8 @@ def main() -> int:
     parser.add_argument("--city", default="", help="ville (optionnel)")
     parser.add_argument(
         "--nomenclature",
-        type=Path,
         default=DEFAULT_NOMENCLATURE,
-        help="fichier CSV de la nomenclature (défaut : data/nmcl_magasins.csv)",
+        help="fichier CSV de la nomenclature, s3:// ou local (défaut : nmcl_magasins.csv du S3)",
     )
     parser.add_argument(
         "--search-provider",

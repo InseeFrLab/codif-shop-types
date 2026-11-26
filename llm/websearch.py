@@ -151,6 +151,7 @@ def run_agent(
     provider: str | None = None,
     stats: dict | None = None,
     verbose: bool = True,
+    websearch: bool = True,
 ) -> tuple[str, list[dict]]:
     """Envoie une conversation au modèle, qui peut utiliser web_search.
 
@@ -170,11 +171,17 @@ def run_agent(
     `stats` (optionnel) : dictionnaire que la fonction remplit avec "calls" (nombre
     d'appels au modèle) et "tokens" (total de tokens consommés).
     `verbose` : False supprime l'affichage "[tool] web_search(...)" (utile en parallèle).
+    `websearch` : False appelle le modèle sans l'outil web_search (aucune recherche possible).
     """
-    provider = resolve_provider(provider)
-    check_provider(provider)  # échoue tout de suite si la clé ou le nom est invalide
     client = get_client()
     model = os.environ["LLM_LAB_MODEL"]
+    if not websearch:
+        response = client.chat.completions.create(model=model, messages=messages)
+        _record_usage(stats, response)
+        return response.choices[0].message.content or "", []
+
+    provider = resolve_provider(provider)
+    check_provider(provider)  # échoue tout de suite si la clé ou le nom est invalide
     searches: list[dict] = []  # le détail des recherches effectivement lancées
 
     for _ in range(MAX_ITERATIONS):
