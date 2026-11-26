@@ -26,17 +26,17 @@ COLONNES AJOUTÉES
     trace_json               (option --trace) détail complet des recherches web
 
 UTILISATION
-    uv run run.py shops.csv                       # écrit shops_coded.csv
-    uv run run.py shops.csv --dry-run             # compte les appels LLM, sans en faire
-    uv run run.py shops.csv --no-llm              # regex seulement
-    uv run run.py shops.csv --limit 5             # au plus 5 appels LLM (pour un essai)
-    uv run run.py shops.csv --workers 8 --search-provider serper
+    uv run run.py data/shops.csv                       # écrit data/shops_coded.csv
+    uv run run.py data/shops.csv --dry-run             # compte les appels LLM, sans en faire
+    uv run run.py data/shops.csv --no-llm              # regex seulement
+    uv run run.py data/shops.csv --limit 5             # au plus 5 appels LLM (pour un essai)
+    uv run run.py data/shops.csv --workers 8 --search-provider serper
     Fichier de la BDF (TSV, latin-1) :
     uv run run.py liste_magasins_a_coder.csv --delimiter '\\t' --encoding latin-1 \\
         --col-label 1 --col-city 2      # (l'en-tête de ce fichier est décalé : colonne 0 = numéro de ligne)
 
 PRÉREQUIS pour les appels LLM : .env rempli (LLM_LAB_*), et fournisseur de recherche disponible
-    (SearXNG lancé via ./setup_searxng.sh, ou SERPER_API_KEY renseignée).
+    (SearXNG lancé via ./common/setup_searxng.sh, ou SERPER_API_KEY renseignée).
 """
 
 import argparse
@@ -50,8 +50,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import rules
-from classification import DEFAULT_NOMENCLATURE, classify_with_llm, load_nomenclature
-from search_providers import PROVIDERS, check_provider, resolve_provider
+from llm.classification import DEFAULT_NOMENCLATURE, classify_with_llm, load_nomenclature
+from common.search_providers import PROVIDERS, check_provider, resolve_provider
 
 ADDED_COLUMNS = [
     "code", "store_type", "method",
@@ -186,7 +186,7 @@ def main() -> int:
     ap.add_argument("--encoding", default="utf-8", help="encodage du fichier d'entrée (défaut utf-8 ; la sortie est en utf-8)")
     ap.add_argument("--col-label", help="colonne du libellé : nom, ou position à partir de 0 (défaut : 1re colonne)")
     ap.add_argument("--col-city", help="colonne de la commune : nom, ou position à partir de 0 (défaut : 2e colonne)")
-    ap.add_argument("--nomenclature", type=Path, default=DEFAULT_NOMENCLATURE, help="nomenclature (défaut : nmcl_magasins.csv)")
+    ap.add_argument("--nomenclature", type=Path, default=DEFAULT_NOMENCLATURE, help="nomenclature (défaut : data/nmcl_magasins.csv)")
     ap.add_argument("--tiers", nargs="+", default=["A", "B"], choices=["A", "B"], help="tiers de règles regex utilisés (défaut : A B)")
     ap.add_argument("--no-llm", action="store_true", help="regex seulement : les lignes non codées restent en 'pending'")
     ap.add_argument("--dry-run", action="store_true", help="affiche les comptes et le nombre d'appels LLM prévus, sans rien appeler ni écrire")
@@ -240,7 +240,7 @@ def main() -> int:
         provider = resolve_provider(args.search_provider)
         try:
             check_provider(provider)
-            from client import get_client
+            from llm.client import get_client
             get_client()  # vérifie LLM_LAB_API_KEY
             if not os.getenv("LLM_LAB_MODEL"):
                 raise ValueError("LLM_LAB_MODEL est absent du fichier .env")

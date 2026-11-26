@@ -15,7 +15,7 @@ PRINCIPE
     c'est websearch.web_search() qui l'attrape.
 
 FOURNISSEURS
-    - searxng : méta-moteur installé en local (./setup_searxng.sh), gratuit,
+    - searxng : méta-moteur installé en local (./common/setup_searxng.sh), gratuit,
                 interroge plusieurs moteurs mais ceux-ci peuvent te bloquer.
     - serper  : API payante (https://serper.dev), résultats de Google
                 uniquement, plus fiable. Nécessite SERPER_API_KEY dans le .env.

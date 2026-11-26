@@ -3,7 +3,7 @@ classification.py : classification d'une enseigne par le LLM (avec recherche web
 
 Brique réutilisable par run.py (traitement d'un fichier) et classify.py (une enseigne) :
     - load_nomenclature : lit nmcl_magasins.csv -> {code: libellé}
-    - build_prompt      : remplit le modèle de prompt (prompts/classification.txt)
+    - build_prompt      : remplit le modèle de prompt (llm/prompts/classification.txt)
     - parse_answer      : extrait et valide le JSON renvoyé par le modèle
     - classify_with_llm : enchaîne les trois et renvoie un résultat structuré,
                           sans jamais lever d'exception (les erreurs sont dans le résultat)
@@ -16,13 +16,14 @@ import re
 from pathlib import Path
 from string import Template
 
-from websearch import run_agent
+from common.paths import DATA_DIR
+from llm.websearch import run_agent
 
 # Les chemins sont relatifs à ce fichier, pour fonctionner quel que soit le
 # dossier depuis lequel on lance la commande.
 BASE_DIR = Path(__file__).parent
 PROMPT_PATH = BASE_DIR / "prompts" / "classification.txt"
-DEFAULT_NOMENCLATURE = BASE_DIR / "nmcl_magasins.csv"
+DEFAULT_NOMENCLATURE = DATA_DIR / "nmcl_magasins.csv"
 
 
 def load_nomenclature(path: Path) -> dict[str, str]:

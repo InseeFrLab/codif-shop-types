@@ -7,7 +7,7 @@ evaluate_rules.py : contrôle des règles de rules.py.
      et échantillons pour relire les faux positifs.
 
 UTILISATION
-    uv run evaluate_rules.py REFERENCE.csv A_CODER.csv [--tiers A B] [--sortie DOSSIER]
+    uv run -m rules.evaluate_rules REFERENCE.csv A_CODER.csv [--tiers A B] [--sortie DOSSIER]
     (--sortie écrit codes.csv, hors_champ.csv, ambigus.csv et non_codes.csv)
                              [--echantillon N] [--voir CODE ...]
     Les fichiers se téléchargent depuis S3 (aws s3 cp ...). Encodage de la liste à coder : latin-1.
@@ -20,12 +20,13 @@ import random
 import sys
 from pathlib import Path
 
+from common.paths import DATA_DIR
 from rules import REGLES, coder
 
 
 def lire_reference(chemin: Path) -> list[tuple[str, str, str]]:
     """[(identifiant, code, libellé)] ; ignore les codes absents de la nomenclature."""
-    nmcl = {l.split(";")[0].strip() for l in (Path(__file__).parent / "nmcl_magasins.csv").read_text(encoding="utf-8").splitlines()[1:]}
+    nmcl = {l.split(";")[0].strip() for l in (DATA_DIR / "nmcl_magasins.csv").read_text(encoding="utf-8").splitlines()[1:]}
     out = []
     with open(chemin, encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f, delimiter=";"):

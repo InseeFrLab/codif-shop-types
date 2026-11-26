@@ -21,7 +21,7 @@ PRÉREQUIS
     - Le fichier .env doit contenir LLM_LAB_API_KEY, LLM_LAB_BASE_URL et
       LLM_LAB_MODEL.
     - Selon le fournisseur de recherche (variable SEARCH_PROVIDER du .env) :
-        * searxng : SearXNG doit tourner (./setup_searxng.sh ; vérification :
+        * searxng : SearXNG doit tourner (./common/setup_searxng.sh ; vérification :
           curl http://127.0.0.1:8888/healthz doit répondre "OK") ;
         * serper  : SERPER_API_KEY doit être renseignée dans le .env.
 
@@ -44,8 +44,8 @@ import sys
 
 from dotenv import load_dotenv
 
-from client import get_client  # le client OpenAI configuré pour llm.lab (client.py)
-from search_providers import PROVIDERS, check_provider, resolve_provider
+from llm.client import get_client  # le client OpenAI configuré pour llm.lab (client.py)
+from common.search_providers import PROVIDERS, check_provider, resolve_provider
 
 # Lit le fichier .env pour remplir les variables d'environnement.
 load_dotenv()

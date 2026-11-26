@@ -2,7 +2,7 @@
 classify.py : classe une enseigne de magasin dans la nomenclature de magasins.
 
 PRINCIPE
-    On construit un prompt (modèle dans prompts/classification.txt) contenant la
+    On construit un prompt (modèle dans llm/prompts/classification.txt) contenant la
     nomenclature (nmcl_magasins.csv) et l'enseigne à classer. Le modèle llm.lab
     peut chercher sur le web (outil web_search, voir websearch.py) puis répond
     par un objet JSON {"code": ..., "justification": ...}. On vérifie que le
@@ -17,12 +17,12 @@ STRUCTURE DU FICHIER
 
 PRÉREQUIS
     - Le .env doit être rempli, et le fournisseur de recherche choisi doit être
-      disponible : SearXNG lancé (./setup_searxng.sh) ou SERPER_API_KEY renseignée.
+      disponible : SearXNG lancé (./common/setup_searxng.sh) ou SERPER_API_KEY renseignée.
 
 UTILISATION
-    uv run classify.py "ELECTRO DEPOT" --city 57
-    uv run classify.py "AIR BNB"
-    uv run classify.py "MK2" --city PARIS --search-provider serper
+    uv run -m llm.classify "ELECTRO DEPOT" --city 57
+    uv run -m llm.classify "AIR BNB"
+    uv run -m llm.classify "MK2" --city PARIS --search-provider serper
     Un seul appel à la fois : un nom d'enseigne par exécution.
     Le fournisseur de recherche (searxng ou serper) se choisit avec l'option
     --search-provider ou la variable SEARCH_PROVIDER du .env.
@@ -33,9 +33,9 @@ import json
 import sys
 from pathlib import Path
 
-from classification import DEFAULT_NOMENCLATURE, build_prompt, load_nomenclature, parse_answer
-from search_providers import PROVIDERS, check_provider, resolve_provider
-from websearch import run_agent
+from llm.classification import DEFAULT_NOMENCLATURE, build_prompt, load_nomenclature, parse_answer
+from common.search_providers import PROVIDERS, check_provider, resolve_provider
+from llm.websearch import run_agent
 
 
 def main() -> int:
@@ -48,7 +48,7 @@ def main() -> int:
         "--nomenclature",
         type=Path,
         default=DEFAULT_NOMENCLATURE,
-        help="fichier CSV de la nomenclature (défaut : nmcl_magasins.csv)",
+        help="fichier CSV de la nomenclature (défaut : data/nmcl_magasins.csv)",
     )
     parser.add_argument(
         "--search-provider",
