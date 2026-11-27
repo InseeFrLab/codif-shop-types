@@ -54,6 +54,12 @@ def main() -> int:
         help="fournisseur de recherche web (défaut : variable SEARCH_PROVIDER du "
         ".env, sinon searxng)",
     )
+    parser.add_argument(
+        "--force-search",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="impose au moins une recherche web (défaut) ; --no-force-search laisse le modèle décider",
+    )
     args = parser.parse_args()
 
     # On vérifie le fournisseur (nom, clé API) avant d'appeler le modèle, pour
@@ -66,8 +72,12 @@ def main() -> int:
         return 1
 
     nomenclature = load_nomenclature(args.nomenclature)
-    prompt = build_prompt(args.libelle, args.city, nomenclature, load_examples(args.nomenclature))
-    answer, searches = run_agent([{"role": "user", "content": prompt}], provider)
+    prompt = build_prompt(args.libelle, args.city, nomenclature, load_examples(args.nomenclature), args.force_search)
+    try:
+        answer, searches = run_agent([{"role": "user", "content": prompt}], provider, force_search=args.force_search)
+    except RuntimeError as e:  # serveur qui refuse d'imposer la recherche
+        print(f"Erreur : {e}", file=sys.stderr)
+        return 1
 
     try:
         result = parse_answer(answer, nomenclature)
@@ -80,6 +90,7 @@ def main() -> int:
     # résultats retenus).
     result["recherche_web"] = {
         "fournisseur": provider,
+        "obligatoire": args.force_search,
         "lancee": bool(searches),
         "recherches": searches,
     }

@@ -179,7 +179,7 @@ def duration(seconds: float) -> str:
     return f"{seconds // 3600} h {seconds % 3600 // 60:02d}"
 
 
-def run_llm_pass(keys, cache_path, nomenclature, provider, workers, websearch=True, exemples=None) -> dict[tuple[str, str], dict]:
+def run_llm_pass(keys, cache_path, nomenclature, provider, workers, websearch=True, exemples=None, force_search=True) -> dict[tuple[str, str], dict]:
     """Classe les couples (libellé, commune) avec le LLM. Renvoie {clé: résultat} (échecs inclus).
 
     Affichage en direct : une ligne par résultat, et une ligne de suivi au moins toutes les
@@ -190,7 +190,8 @@ def run_llm_pass(keys, cache_path, nomenclature, provider, workers, websearch=Tr
 
     def timed_call(label, city):
         start = time.monotonic()
-        result = classify_with_llm(label, city, nomenclature, provider, websearch=websearch, exemples=exemples)
+        result = classify_with_llm(label, city, nomenclature, provider, websearch=websearch, exemples=exemples,
+                                   force_search=force_search)
         return result, time.monotonic() - start
 
     results: dict[tuple[str, str], dict] = {}
@@ -292,6 +293,9 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=4, help="appels LLM en parallèle (défaut 4)")
     ap.add_argument("--search-provider", choices=list(PROVIDERS), help="fournisseur de recherche web (défaut : SEARCH_PROVIDER du .env, sinon searxng)")
     ap.add_argument("--trace", action="store_true", help="ajoute la colonne trace_json (détail des recherches web)")
+    ap.add_argument("--force-search", action=argparse.BooleanOptionalAction, default=True,
+                    help="impose au moins une recherche web par libellé envoyé au LLM (défaut) ; "
+                         "--no-force-search laisse le modèle décider s'il cherche")
     ap.add_argument("--no-websearch", action="store_true", help="le modèle répond sans l'outil de recherche web (aucun appel SearXNG/Serper)")
     ap.add_argument("--no-cache", action="store_true", help="ni lecture ni écriture du cache LLM : tout est reclassé (phase d'évaluation)")
     args = ap.parse_args()
@@ -364,10 +368,15 @@ def main() -> int:
         except (ValueError, RuntimeError) as e:
             print(f"Erreur : {e}.", file=sys.stderr)
             return 1
-        search = "sans recherche web" if args.no_websearch else f"fournisseur de recherche : {provider}"
+        if args.no_websearch:
+            search = "sans recherche web" + (" (--force-search ignoré)" if args.force_search else "")
+        else:
+            mode = "recherche obligatoire" if args.force_search else "recherche au choix du modèle"
+            search = f"{mode}, fournisseur : {provider}"
         log(f"  appels LLM : {len(to_call)} ({search}, {args.workers} en parallèle) ; "
             f"un suivi s'affiche au moins toutes les 30 s")
-        llm_results.update(run_llm_pass(to_call, cache_path, nomenclature, provider, max(args.workers, 1), websearch=not args.no_websearch, exemples=exemples))
+        llm_results.update(run_llm_pass(to_call, cache_path, nomenclature, provider, max(args.workers, 1), websearch=not args.no_websearch, exemples=exemples,
+                                              force_search=args.force_search))
 
     # 4. Écriture du fichier de sortie
     added_columns = ADDED_COLUMNS + (["trace_json"] if args.trace else [])

@@ -1,1 +1,3 @@
-uv run run.py s3://projet-budget-famille/data/shop-types-classification/samples/liste_magasins_a_coder_n300_seed1_26112026.parquet --no-cache
+# uv run run.py s3://projet-budget-famille/data/shop-types-classification/samples/liste_magasins_a_coder_n300_seed1_26112026.parquet --no-cache
+uv run run.py s3://projet-budget-famille/data/shop-types-classification/samples/liste_magasins_a_coder_n300_seed2_27112026.parquet --no-cache
+# uv run run.py s3://projet-budget-famille/data/shop-types-classification/samples/liste_magasins_a_coder_n10_seed2_27112026.parquet --no-cache

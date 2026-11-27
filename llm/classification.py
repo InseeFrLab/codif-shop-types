@@ -33,6 +33,15 @@ DEFAULT_NOMENCLATURE = f"{S3_DIR}/nmcl_magasins_exemples.csv"
 SEPARATEUR_EXEMPLES = " | "
 CONFIANCES = ("haute", "moyenne", "basse")
 
+# Consignes d'usage de la recherche web, selon le mode (variable $consignes_recherche du prompt).
+CONSIGNES_RECHERCHE = {
+    True: "- Fais toujours au moins une recherche avant de répondre, même si tu crois connaître l'enseigne "
+          "ou si l'activité te semble évidente (3 recherches au maximum).",
+    False: "- Si tu ne connais pas l'enseigne avec certitude, ou si le nom est ambigu, utilise l'outil "
+           "web_search (3 recherches au maximum).\n"
+           "- Si l'activité est évidente à partir du nom, ne fais pas de recherche.",
+}
+
 
 def _read_rows(path: str | Path) -> list[dict]:
     """Lignes d'un CSV séparé par des ";" (S3 ou local), en UTF-8 ou, à défaut, en cp1252."""
@@ -61,6 +70,7 @@ def load_examples(path: str | Path = DEFAULT_NOMENCLATURE) -> dict[str, list[str
 
 def build_prompt(
     libelle: str, ville: str, nomenclature: dict[str, str], exemples: dict[str, list[str]] | None = None,
+    force_search: bool = False,
 ) -> str:
     """Remplit le modèle de prompt avec la nomenclature (et ses exemples annotés) et l'enseigne à classer.
 
@@ -78,6 +88,7 @@ def build_prompt(
     return template.substitute(
         nomenclature="\n".join(lignes),
         libelle=libelle,
+        consignes_recherche=CONSIGNES_RECHERCHE[force_search],
         ville=ville or "(non renseignée)",
     )
 
@@ -120,7 +131,7 @@ def normalize_confidence(value) -> str:
 
 def classify_with_llm(
     label: str, city: str, nomenclature: dict[str, str], provider: str | None = None,
-    websearch: bool = True, exemples: dict[str, list[str]] | None = None,
+    websearch: bool = True, exemples: dict[str, list[str]] | None = None, force_search: bool = False,
 ) -> dict:
     """Classe une enseigne avec le LLM (et la recherche web si le modèle la juge utile).
 
@@ -146,10 +157,11 @@ def classify_with_llm(
     }
     stats: dict = {}
     try:
-        prompt = build_prompt(label, city, nomenclature, exemples)
+        force_search = force_search and websearch  # sans outil, pas de recherche à imposer
+        prompt = build_prompt(label, city, nomenclature, exemples, force_search)
         answer, searches = run_agent(
             [{"role": "user", "content": prompt}], provider, stats=stats, verbose=False,
-            websearch=websearch,
+            websearch=websearch, force_search=force_search,
         )
     except Exception as e:  # réseau, clé invalide, fournisseur de recherche, etc.
         result["error"] = f"{type(e).__name__}: {e}"

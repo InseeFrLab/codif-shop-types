@@ -43,6 +43,7 @@ import os
 import sys
 
 from dotenv import load_dotenv
+from openai import BadRequestError
 
 from llm.client import get_client  # le client OpenAI configuré pour llm.lab (client.py)
 from common.search_providers import PROVIDERS, check_provider, resolve_provider
@@ -146,12 +147,41 @@ def _record_usage(stats: dict | None, response) -> None:
         stats["tokens"] = stats.get("tokens", 0) + (getattr(usage, "total_tokens", 0) or 0)
 
 
+# Deux façons d'imposer l'outil : "required" (standard OpenAI) ou l'outil désigné par son nom,
+# selon ce que le serveur llm.lab accepte.
+FORCED_TOOL_CHOICES = ("required", {"type": "function", "function": {"name": "web_search"}})
+
+
+_forced_choice = None  # la forme acceptée par le serveur, retenue après le premier succès
+
+
+def _first_call_forced(client, model, messages):
+    """Premier appel avec recherche imposée ; essaie les deux formes de tool_choice."""
+    global _forced_choice
+    errors = []
+    choices = [_forced_choice] if _forced_choice is not None else FORCED_TOOL_CHOICES
+    for choice in choices:
+        try:
+            response = client.chat.completions.create(
+                model=model, messages=messages, tools=TOOLS, tool_choice=choice
+            )
+            _forced_choice = choice
+            return response
+        except BadRequestError as e:
+            errors.append(f"tool_choice={choice!r} : {e}")
+    raise RuntimeError(
+        "le serveur refuse d'imposer la recherche web (" + " ; ".join(errors)
+        + "). Relancer avec --no-force-search."
+    )
+
+
 def run_agent(
     messages: list[dict],
     provider: str | None = None,
     stats: dict | None = None,
     verbose: bool = True,
     websearch: bool = True,
+    force_search: bool = False,
 ) -> tuple[str, list[dict]]:
     """Envoie une conversation au modèle, qui peut utiliser web_search.
 
@@ -172,6 +202,8 @@ def run_agent(
     d'appels au modèle) et "tokens" (total de tokens consommés).
     `verbose` : False supprime l'affichage "[tool] web_search(...)" (utile en parallèle).
     `websearch` : False appelle le modèle sans l'outil web_search (aucune recherche possible).
+    `force_search` : True impose au moins une recherche (tool_choice="required" au premier
+    appel ; si l'API le refuse, l'outil est désigné par son nom). Sans effet si websearch=False.
     """
     client = get_client()
     model = os.environ["LLM_LAB_MODEL"]
@@ -184,11 +216,14 @@ def run_agent(
     check_provider(provider)  # échoue tout de suite si la clé ou le nom est invalide
     searches: list[dict] = []  # le détail des recherches effectivement lancées
 
-    for _ in range(MAX_ITERATIONS):
+    for iteration in range(MAX_ITERATIONS):
         # On envoie la conversation + la description des outils disponibles.
-        response = client.chat.completions.create(
-            model=model, messages=messages, tools=TOOLS
-        )
+        if force_search and iteration == 0:
+            response = _first_call_forced(client, model, messages)
+        else:
+            response = client.chat.completions.create(
+                model=model, messages=messages, tools=TOOLS
+            )
         _record_usage(stats, response)
         message = response.choices[0].message
 

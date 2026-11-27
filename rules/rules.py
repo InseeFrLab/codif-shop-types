@@ -228,7 +228,7 @@ add("121", X("BOULANGER", "PAIN"), ref="Boulanger, Pain (libellés exacts ; 'BOU
 
 # --- Extensions B fréquentes dans la liste à coder (connaissances extérieures, à relire)
 add("233", W("CACHE CACHE", "GENERALE D OPTIQUE"), 1, "B", ref="ext. (enseignes d'habillement / d'optique)")
-add("121", W("FOURNIL", "MIE DE PAIN", "POMME DE PAIN", "PETISSERIE"), 1, "B", ref="ext. (fournil = boulangerie ; typo pâtisserie)")
+# add("121", W("FOURNIL", "MIE DE PAIN", "POMME DE PAIN", "PETISSERIE"), 1, "B", ref="ext. (fournil = boulangerie ; typo pâtisserie)")
 add("129", W(r"CAVE A VINS?"), 1, "B", ref="ext. (analogie Caviste)")
 add("322", W("VOITURE A PAIN"), 1, "B", ref="ext. (analogie Boulanger ambulant)")
 add("659", W("INDIGO", "EASY PARK", "EFFIA", "HORODATEUR"), 1, "B", ref="ext. (analogie Parking)")

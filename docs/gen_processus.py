@@ -168,7 +168,7 @@ l5, t5 = llm_step("L5", "Prompt", LVIOLET,
                   "Le prompt donne au modèle la nomenclature et ses exemples annotés, le libellé et la commune. Il demande un code, une justification et une confiance (haute, moyenne, basse) ; 99 si l'enseigne n'est que probable.", nxt(l2, t2))
 l6 = box("L6", "Modèle llm.lab", X_LLM, nxt(l5, t5), VIOLET, w=230)
 l7 = box("L7", "Recherche web", X_LLM + W_LLM - 220, l6["y"], BLUE, w=220)
-t6 = ann("aL6", "Si le modèle ne connaît pas l'enseigne, il lance lui-même une recherche web (SearXNG ou Serper), lit les résultats et peut recommencer, 5 fois au plus.",
+t6 = ann("aL6", "Par défaut, une première recherche web (SearXNG ou Serper) est imposée au modèle ; avec --no-force-search, il décide seul s'il cherche. Il lit les résultats et peut recommencer, 5 fois au plus.",
          X_LLM + ANN_DX, bottom(l6) + G, 38)
 l8, t8 = llm_step("L8", "Vérification du code", LVIOLET,
                   "Le code proposé doit exister dans la nomenclature. Sinon la ligne est marquée en erreur et sera retentée au prochain run. La confiance va dans la colonne llm_confidence : les lignes « basse » sont à relire.",
