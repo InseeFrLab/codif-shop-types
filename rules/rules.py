@@ -492,7 +492,7 @@ CODE_HORS_CHAMP = "00"
 HORS_CHAMP_LABEL = "Hors champ (pas une enseigne)"  # type de magasin affiché pour le code 00
 add(CODE_HORS_CHAMP, X(
     # illisible / vide / sans information
-    "", "ILLISIBLE", "PAS DE TICKET", "SANS TICKET", "DUPLICATA", "NORMAL", "ENSEIGNE", "L S", "LS", "AUTRE", "DIVERS",
+    "", "ILLISIBLE", "PAS DE TICKET", "SANS TICKET", "DUPLICATA", "ENSEIGNE", "L S", "LS", "AUTRE", "DIVERS",
     # modes de paiement et opérations bancaires
     r"VIREMENTS?(?: BANCAIRE| MENSUEL)?", r"PRELEVEMENTS?(?: BANCAIRE| MENSUEL| AUTOMATIQUE)?", "CB", "DAB", r"CHEQUES?", "CARTE",
     "ARGENT LIQUIDE", "ESPECES", "RETRAIT", "PAR MOIS",
@@ -596,6 +596,7 @@ add("652", X("CAF"), 1, "B", ref="ext. (analogie Administration)")
 add("631", W("CORIOLIS", "NRJ MOBILE", "PRIXTEL"), 1, "B", ref="ext. (analogie Sfr, Bouygues)")
 add("653", W("BRED", "N26", "SOFINCO", r"SWISS ?LIFE", "PACIFICA", r"AG2R(?: LA MONDIALE)?"), 1, "B", ref="ext. (analogie Bnp, Cetelem, Cofidis, Axa, Groupama)")
 add("129", X("CAVES?", r"CAVE DE VINS?"), 1, "B", ref="ext. (libellé exact 'Cave' = caviste ; analogie Caviste, Cave à vin)")
+add("211", r"^NORMAL\b", 1, "B", ref="ext. (enseigne discount Normal ; analogie Action, Noz, Stokomani)")
 add("653", r"^APRIL\b", 1, "B", ref="ext. (assurance ; analogie Axa)")
 add("659", W("LAFORET", "FONCIA", r"PARIONS(?: SPORT)?"), 1, "B", ref="ext. (analogie Agence immobilière, Syndic, Française des jeux, Loto)")
 add("611", W("BIOGROUP", "SYNLAB", "IMAGERIE MEDICALE"), 1, "B", ref="ext. (analogie Laboratoire médical, Centre radiologie)")
