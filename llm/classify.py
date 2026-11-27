@@ -32,7 +32,7 @@ import argparse
 import json
 import sys
 
-from llm.classification import DEFAULT_NOMENCLATURE, build_prompt, load_nomenclature, parse_answer
+from llm.classification import DEFAULT_NOMENCLATURE, build_prompt, load_examples, load_nomenclature, parse_answer
 from common.search_providers import PROVIDERS, check_provider, resolve_provider
 from llm.websearch import run_agent
 
@@ -46,7 +46,7 @@ def main() -> int:
     parser.add_argument(
         "--nomenclature",
         default=DEFAULT_NOMENCLATURE,
-        help="fichier CSV de la nomenclature, s3:// ou local (défaut : nmcl_magasins.csv du S3)",
+        help="fichier CSV de la nomenclature, s3:// ou local (défaut : nmcl_magasins_exemples.csv du S3)",
     )
     parser.add_argument(
         "--search-provider",
@@ -66,7 +66,7 @@ def main() -> int:
         return 1
 
     nomenclature = load_nomenclature(args.nomenclature)
-    prompt = build_prompt(args.libelle, args.city, nomenclature)
+    prompt = build_prompt(args.libelle, args.city, nomenclature, load_examples(args.nomenclature))
     answer, searches = run_agent([{"role": "user", "content": prompt}], provider)
 
     try:

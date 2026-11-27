@@ -2,8 +2,10 @@
 classification.py : classification d'une enseigne par le LLM (avec recherche web).
 
 Brique réutilisable par run.py (traitement d'un fichier) et classify.py (une enseigne) :
-    - load_nomenclature : lit nmcl_magasins.csv (sur le S3 par défaut) -> {code: libellé} ;
+    - load_nomenclature : lit la nomenclature (sur le S3 par défaut) -> {code: libellé} ;
                           chargée une fois par run, puis injectée dans chaque prompt
+    - load_examples     : lit les exemples annotés de la nomenclature enrichie -> {code: [exemples]}
+                          (fichier construit par llm/nomenclature_exemples.py)
     - build_prompt      : remplit le modèle de prompt (llm/prompts/classification.txt)
     - parse_answer      : extrait et valide le JSON renvoyé par le modèle
     - classify_with_llm : enchaîne les trois et renvoie un résultat structuré,
@@ -25,33 +27,54 @@ from llm.websearch import run_agent
 # dossier depuis lequel on lance la commande.
 BASE_DIR = Path(__file__).parent
 PROMPT_PATH = BASE_DIR / "prompts" / "classification.txt"
-DEFAULT_NOMENCLATURE = f"{S3_DIR}/nmcl_magasins.csv"
+# Nomenclature enrichie : code;libellé;exemples (voir llm/nomenclature_exemples.py).
+DEFAULT_NOMENCLATURE = f"{S3_DIR}/nmcl_magasins_exemples.csv"
+SEPARATEUR_EXEMPLES = " | "
 
 
-def load_nomenclature(path: str | Path = DEFAULT_NOMENCLATURE) -> dict[str, str]:
-    """Lit la nomenclature (CSV séparé par des ";", sur le S3 ou en local) -> {code: libellé}.
-
-    Le fichier du S3 est en Windows-1252 : on essaie l'UTF-8, sinon cp1252.
-    """
+def _read_rows(path: str | Path) -> list[dict]:
+    """Lignes d'un CSV séparé par des ";" (S3 ou local), en UTF-8 ou, à défaut, en cp1252."""
     raw = read_bytes(str(path))
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
         text = raw.decode("cp1252")
-    reader = csv.DictReader(io.StringIO(text, newline=""), delimiter=";")
+    return list(csv.DictReader(io.StringIO(text, newline=""), delimiter=";"))
+
+
+def load_nomenclature(path: str | Path = DEFAULT_NOMENCLATURE) -> dict[str, str]:
+    """Lit la nomenclature (brute ou enrichie) -> {code: libellé}. La colonne exemples est ignorée."""
     # strip() : certains libellés ont un espace parasite en tête (ex. code 421).
-    return {row["code"].strip(): row["libellé"].strip() for row in reader}
+    return {row["code"].strip(): row["libellé"].strip() for row in _read_rows(path)}
 
 
-def build_prompt(libelle: str, ville: str, nomenclature: dict[str, str]) -> str:
-    """Remplit le modèle de prompt avec la nomenclature et l'enseigne à classer.
+def load_examples(path: str | Path = DEFAULT_NOMENCLATURE) -> dict[str, list[str]]:
+    """Exemples annotés par code -> {code: [exemples]} ; {} si le fichier n'a pas de colonne exemples."""
+    return {
+        row["code"].strip(): row["exemples"].split(SEPARATEUR_EXEMPLES)
+        for row in _read_rows(path)
+        if (row.get("exemples") or "").strip()
+    }
+
+
+def build_prompt(
+    libelle: str, ville: str, nomenclature: dict[str, str], exemples: dict[str, list[str]] | None = None,
+) -> str:
+    """Remplit le modèle de prompt avec la nomenclature (et ses exemples annotés) et l'enseigne à classer.
 
     Le modèle utilise la syntaxe string.Template ($nomenclature, $libelle, $ville)
     plutôt que {} car le prompt contient lui-même des accolades (exemple de JSON).
     """
+    exemples = exemples or {}
+    lignes = []
+    for code, lib in nomenclature.items():
+        ligne = f"{code};{lib}"
+        if exemples.get(code):
+            ligne += f" (exemples annotés : {', '.join(exemples[code])})"
+        lignes.append(ligne)
     template = Template(PROMPT_PATH.read_text(encoding="utf-8"))
     return template.substitute(
-        nomenclature="\n".join(f"{code};{lib}" for code, lib in nomenclature.items()),
+        nomenclature="\n".join(lignes),
         libelle=libelle,
         ville=ville or "(non renseignée)",
     )
@@ -85,7 +108,7 @@ def parse_answer(text: str, nomenclature: dict[str, str]) -> dict:
 
 def classify_with_llm(
     label: str, city: str, nomenclature: dict[str, str], provider: str | None = None,
-    websearch: bool = True,
+    websearch: bool = True, exemples: dict[str, list[str]] | None = None,
 ) -> dict:
     """Classe une enseigne avec le LLM (et la recherche web si le modèle la juge utile).
 
@@ -109,7 +132,7 @@ def classify_with_llm(
     }
     stats: dict = {}
     try:
-        prompt = build_prompt(label, city, nomenclature)
+        prompt = build_prompt(label, city, nomenclature, exemples)
         answer, searches = run_agent(
             [{"role": "user", "content": prompt}], provider, stats=stats, verbose=False,
             websearch=websearch,

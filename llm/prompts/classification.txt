@@ -3,7 +3,7 @@ Tu es un expert de la classification des points de vente. Ta tâche : classer un
 CONTEXTE
 Les libellés viennent de l'enquête Budget de famille : un ménage a noté où il a fait une dépense. Le libellé n'est donc pas toujours le nom d'un magasin : ce peut être une description libre (« boulangerie du coin »), un club ou une association, un service, un organisme ou une personne.
 
-NOMENCLATURE (format "code;libellé"). Les codes courts (1, 11, 2, 21...) sont des regroupements, les codes plus longs en sont des sous-catégories :
+NOMENCLATURE (format "code;libellé"). Les codes courts (1, 11, 2, 21...) sont des regroupements, les codes plus longs en sont des sous-catégories. Après le libellé, la plupart des codes donnent entre parenthèses des « exemples annotés » : des libellés réels de l'enquête que les experts ont rangés dans ce code.
 $nomenclature
 
 ENSEIGNE À CLASSER
@@ -27,6 +27,7 @@ Avant de choisir, demande-toi quelle dépense le ménage a réellement faite, et
 - Un mot d'activité ne suffit pas à conclure : vérifie s'il désigne l'objet vendu, le service rendu ou l'activité pratiquée.
 
 RÈGLES DE CHOIX
+- Les exemples annotés fixent les conventions de codage. Si l'enseigne est du même type qu'un exemple (même activité, même format de magasin), choisis le code de cet exemple, même si un autre code te semble aussi possible. Exemples : une animalerie ou un fleuriste vont en 232, un tabac en 239, un parking ou un syndic en 659.
 - Choisis le code le plus précis que tu peux justifier.
 - En cas de doute entre plusieurs sous-catégories, tu peux renvoyer le code du regroupement parent.
 - Si l'activité reste impossible à déterminer, renvoie le code 99.

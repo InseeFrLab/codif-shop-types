@@ -61,7 +61,7 @@ import rules
 from common.paths import DATA_DIR
 from common.s3 import S3_DIR, connect
 from common.search_providers import PROVIDERS, check_provider, resolve_provider
-from llm.classification import DEFAULT_NOMENCLATURE, classify_with_llm, load_nomenclature
+from llm.classification import DEFAULT_NOMENCLATURE, classify_with_llm, load_examples, load_nomenclature
 
 ADDED_COLUMNS = [
     "code", "store_type", "method",
@@ -175,7 +175,7 @@ def duration(seconds: float) -> str:
     return f"{seconds // 3600} h {seconds % 3600 // 60:02d}"
 
 
-def run_llm_pass(keys, cache_path, nomenclature, provider, workers, websearch=True) -> dict[tuple[str, str], dict]:
+def run_llm_pass(keys, cache_path, nomenclature, provider, workers, websearch=True, exemples=None) -> dict[tuple[str, str], dict]:
     """Classe les couples (libellé, commune) avec le LLM. Renvoie {clé: résultat} (échecs inclus).
 
     Affichage en direct : une ligne par résultat, et une ligne de suivi au moins toutes les
@@ -186,7 +186,7 @@ def run_llm_pass(keys, cache_path, nomenclature, provider, workers, websearch=Tr
 
     def timed_call(label, city):
         start = time.monotonic()
-        result = classify_with_llm(label, city, nomenclature, provider, websearch=websearch)
+        result = classify_with_llm(label, city, nomenclature, provider, websearch=websearch, exemples=exemples)
         return result, time.monotonic() - start
 
     results: dict[tuple[str, str], dict] = {}
@@ -278,7 +278,7 @@ def main() -> int:
     ap.add_argument("--encoding", default="utf-8", help="encodage du fichier d'entrée (défaut utf-8 ; la sortie est en utf-8)")
     ap.add_argument("--col-label", help="colonne du libellé : nom, ou position à partir de 0 (défaut : 1re colonne ; MAG_DEP pour un Parquet)")
     ap.add_argument("--col-city", help="colonne de la commune : nom, ou position à partir de 0 (défaut : 2e colonne ; COM_DEP pour un Parquet)")
-    ap.add_argument("--nomenclature", default=DEFAULT_NOMENCLATURE, help="nomenclature, s3:// ou locale (défaut : nmcl_magasins.csv du S3)")
+    ap.add_argument("--nomenclature", default=DEFAULT_NOMENCLATURE, help="nomenclature, s3:// ou locale (défaut : nmcl_magasins_exemples.csv du S3, avec exemples annotés)")
     ap.add_argument("--tiers", nargs="+", default=["A", "B"], choices=["A", "B"], help="tiers de règles regex utilisés (défaut : A B)")
     ap.add_argument("--no-llm", action="store_true", help="regex seulement : les lignes non codées restent en 'pending'")
     ap.add_argument("--dry-run", action="store_true", help="affiche les comptes et le nombre d'appels LLM prévus, sans rien appeler ni écrire")
@@ -293,6 +293,7 @@ def main() -> int:
     delimiter = "\t" if args.delimiter == "\\t" else args.delimiter
     tiers = tuple(args.tiers)
     nomenclature = load_nomenclature(args.nomenclature)  # chargée une fois, injectée dans chaque prompt
+    exemples = load_examples(args.nomenclature)  # {} si la nomenclature n'a pas de colonne exemples
 
     parquet = args.input.endswith(".parquet")
     if parquet:
@@ -360,7 +361,7 @@ def main() -> int:
         search = "sans recherche web" if args.no_websearch else f"fournisseur de recherche : {provider}"
         log(f"  appels LLM : {len(to_call)} ({search}, {args.workers} en parallèle) ; "
             f"un suivi s'affiche au moins toutes les 30 s")
-        llm_results.update(run_llm_pass(to_call, cache_path, nomenclature, provider, max(args.workers, 1), websearch=not args.no_websearch))
+        llm_results.update(run_llm_pass(to_call, cache_path, nomenclature, provider, max(args.workers, 1), websearch=not args.no_websearch, exemples=exemples))
 
     # 4. Écriture du fichier de sortie
     added_columns = ADDED_COLUMNS + (["trace_json"] if args.trace else [])

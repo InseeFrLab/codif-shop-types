@@ -25,6 +25,7 @@ uv run -m llm.classify "MK2" --city PARIS --search-provider serper
 uv run -m llm.client                 # smoke-test the llm.lab client without web search
 uv run -m rules.evaluate_rules data/Liste_Pointsdevente_BDF2026.csv data/liste_magasins_a_coder.csv   # check regex rules; must report 0 errors on the annotated reference (writes data/sorties/)
 
+uv run -m llm.nomenclature_exemples [--max 10] [--output F]   # rebuild S3 nmcl_magasins_exemples.csv (nomenclature + <=10 annotated examples per code, injected in the prompt)
 uv run -m sampling.draw_sample [--size 100] [--seed 42]   # reproducible random sample of the S3 parquet list -> S3 samples/..._<JJMMAAAA>.parquet (DuckDB)
 
 curl http://127.0.0.1:8888/healthz   # SearXNG health (returns OK)
@@ -69,5 +70,5 @@ To change classification behavior, edit `llm/prompts/classification.txt` rather 
 ## S3 / Parquet
 
 - DuckDB only (no pyarrow/pandas): `common/s3.py` `connect()` builds the S3 secret from the SSP Cloud `AWS_*` env vars; `read_bytes()` reads any `s3://` or local file.
-- The nomenclature is read from S3 (`nmcl_magasins.csv`, cp1252) by `llm.classification.load_nomenclature()` (defaults to S3, decodes UTF-8 then cp1252), once per run.
+- The nomenclature is read from S3 once per run. Default is the enriched `nmcl_magasins_exemples.csv` (`code;libellé;exemples`, UTF-8, built by `llm/nomenclature_exemples.py` from `nmcl_magasins.csv` + the annotated list): `load_nomenclature()` returns `{code: libellé}` (extra column ignored), `load_examples()` returns `{code: [examples]}` (`{}` for the raw file) and `build_prompt` appends `(exemples annotés : …)` to each code line. Prompt changes make the LLM cache stale: use `--no-cache` when evaluating.
 - `run.py` with a `.parquet` input converts rows to text to reuse the CSV pipeline, then writes added columns to a temp JSONL joined back to the input parquet on `file_row_number`, so original column types are kept. Parquet cache lives in `data/cache/<name>_coded.cache.jsonl` (keyed by input, since each run has a new folder).

@@ -53,6 +53,7 @@ aws s3 cp s3://projet-budget-famille/data/shop-types-classification/ data/ --rec
 | `liste_magasins_a_coder.parquet` | dérivé du CSV ci-dessus | Mêmes données, colonnes remises en place : `ID` (int), `MAG_DEP` (libellé), `COM_DEP` (commune, `null` si absente). | Parquet (UTF-8) |
 | `Liste_Pointsdevente_BDF2026.csv` | DRTI | Jeu **annoté**, utilisé pour mettre en place les règles regex (`rules/`) et pour les contrôler (`rules.evaluate_rules`). 1 111 enseignes. | CSV `;`, UTF-8, valeurs entre guillemets. Colonnes `identifiant;libelle` ; l'identifiant vaut `<code>_<n°>` (ex. `111_01;Auchan`), le code est le préfixe. |
 | `nmcl_magasins.csv` | Banque de France (BdF) | Nomenclature des types de magasins, transmise avec assez peu de documentation : seuls un code et un libellé par poste. 76 postes sur 3 niveaux emboîtés (`1` → `11` → `111`). | CSV `;`, Windows-1252 (cp1252), colonnes `code;libellé`. Le code attend de l'UTF-8 : après copie, convertir avec `iconv -f cp1252 -t utf-8`. |
+| `nmcl_magasins_exemples.csv` | dérivé des deux fichiers ci-dessus (`uv run -m llm.nomenclature_exemples`) | Nomenclature **enrichie** : pour chaque code, au plus 10 exemples tirés de la liste annotée (373 exemples sur 51 codes). C'est la nomenclature utilisée par défaut par le LLM : les exemples sont injectés dans le prompt pour qu'il applique les conventions des annotateurs (animalerie → 232, parking → 659…). | CSV `;`, UTF-8, colonnes `code;libellé;exemples`, exemples séparés par ` \| `. |
 
 Points d'attention :
 - Les libellés de `liste_magasins_a_coder` sont en majuscules, presque sans accents. Quelques-uns
@@ -139,8 +140,14 @@ uv run run.py $S3/samples/liste_magasins_a_coder_n200_seed18_26112026.parquet --
 - Cache : comme chaque run a son propre dossier, le cache LLM est gardé en local, lié au fichier
   d'entrée (`data/cache/<nom>_coded.cache.jsonl`). **`--no-cache`** le désactive : tout est
   reclassé à chaque run, ce qui convient à la phase d'évaluation.
-- La nomenclature est lue sur le S3 (`$S3/nmcl_magasins.csv`, Windows-1252), une fois par run, puis
-  injectée dans chaque prompt.
+- La nomenclature est lue sur le S3 (`$S3/nmcl_magasins_exemples.csv`), une fois par run, puis
+  injectée dans chaque prompt avec ses exemples annotés (`--nomenclature $S3/nmcl_magasins.csv`
+  pour revenir au prompt sans exemples).
+- Pour régénérer la nomenclature enrichie après une mise à jour de la liste annotée :
+  `uv run -m llm.nomenclature_exemples [--max 10] [--output <fichier local>]`. Les exemples sont
+  choisis automatiquement : variantes regroupées (Boucher / Boucherie…), groupes les plus fournis
+  d'abord, libellé le plus court de chaque groupe. Changer de prompt invalide le cache LLM :
+  utiliser `--no-cache` pour évaluer.
 
 ### Suivi d'un run et options utiles
 
