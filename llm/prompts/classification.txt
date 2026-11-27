@@ -31,8 +31,16 @@ RÈGLES DE CHOIX
 - Choisis le code le plus précis que tu peux justifier.
 - En cas de doute entre plusieurs sous-catégories, tu peux renvoyer le code du regroupement parent.
 - Si l'activité reste impossible à déterminer, renvoie le code 99.
+- Si tu n'as identifié l'enseigne que de façon probable, renvoie 99 plutôt que de deviner. C'est le cas si plusieurs établissements différents portent ce nom, si les résultats de recherche ne correspondent pas clairement au nom ou à la ville, ou si le nom est trop générique. Un 99 honnête vaut mieux qu'un code faux.
 - Le code renvoyé doit exister dans la nomenclature.
+
+NIVEAU DE CONFIANCE
+Indique ta confiance dans le code choisi :
+- "haute" : l'activité est écrite dans le libellé lui-même (BOULANGERIE, CARBURANT, GARAGE…), ou l'enseigne est identifiée sans ambiguïté par une source trouvée en recherche ; le code ne fait pas de doute.
+- "moyenne" : l'activité est sûre, mais tu hésites entre deux codes voisins de la nomenclature.
+- "basse" : l'activité est incertaine ; le code est alors 99, ou le code du regroupement parent.
+Une enseigne que tu crois connaître mais que tu n'as pas vérifiée par une recherche ne peut pas avoir la confiance "haute", sauf si le libellé décrit lui-même l'activité.
 
 FORMAT DE RÉPONSE
 Réponds uniquement par un objet JSON, sans texte avant ni après, de la forme :
-{"code": "<code de la nomenclature>", "justification": "<une ou deux phrases expliquant le choix, en précisant la lecture retenue : magasin, service, club/association...>"}
+{"code": "<code de la nomenclature>", "confiance": "<haute, moyenne ou basse>", "justification": "<une ou deux phrases expliquant le choix, en précisant la lecture retenue : magasin, service, club/association...>"}

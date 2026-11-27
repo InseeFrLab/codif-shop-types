@@ -34,6 +34,7 @@ prompt -> modèle llm.lab --(besoin du web ?)--> web_search -> SearXNG ou Serper
 | `common/paths.py`   | Chemins communs (`ROOT`, `DATA_DIR`)                                 |
 | `data/`             | Données (voir « Données sources (S3) ») : `shops.csv` (`libelle;city`, exemple), fichiers copiés du S3, sorties du codage (`*_coded.csv`, `sorties/`) |
 | `docs/processus.excalidraw` | Schéma du processus complet (inputs, regex, LLM + web, sauvegarde) ; à ouvrir avec excalidraw.com ou l'extension VS Code Excalidraw |
+| `docs/gen_processus.py` | Génère `docs/processus.excalidraw` (`uv run docs/gen_processus.py docs/processus.excalidraw`). À relancer après tout changement du pipeline : on modifie les textes dans ce script, pas à la main dans Excalidraw. |
 | `.env.example`      | Modèle du fichier `.env` à créer                                     |
 | `pyproject.toml`    | Dépendances Python (installées par `uv sync`)                        |
 | `uv.lock`           | Versions exactes des dépendances (généré par uv)                     |
@@ -165,8 +166,17 @@ Entrée : CSV `libelle;city` (comme `data/shops.csv`). Sortie : mêmes colonnes 
 `method` (`regex` / `llm` / `error` / `pending`), `regex_status` (`code` / `hors_champ` / `ambigu` /
 `aucune`), `regex_rules`, `regex_tier`, `regex_candidate_codes`, `llm_model`, `llm_search_provider`,
 `llm_websearch` (`true` si le modèle a cherché sur le web), `llm_search_count`, `llm_queries`,
-`llm_justification`, `llm_tokens`, `error` (+ `trace_json` avec `--trace`). Les libellés qui ne sont pas
+`llm_justification`, `llm_confidence`, `llm_tokens`, `error` (+ `trace_json` avec `--trace`). Les libellés qui ne sont pas
 une enseigne (« A DOMICILE », « ILLISIBLE »...) reçoivent le code `00` par les regex, sans appel LLM.
+
+`llm_confidence` est la confiance déclarée par le modèle :
+- `haute` : activité écrite dans le libellé, ou enseigne identifiée sans ambiguïté par une source
+  trouvée en recherche (une enseigne « connue » mais non vérifiée ne peut pas être `haute`) ;
+- `moyenne` : activité sûre, hésitation entre deux codes voisins ;
+- `basse` : activité incertaine ; le code est alors `99` ou un code de regroupement.
+Le modèle doit répondre `99` quand l'enseigne n'est identifiée que de façon probable. Pour la
+relecture humaine, commencer par `llm_confidence = basse` et `code = 99`. Les réponses lues dans un
+cache antérieur à ce champ ont `llm_confidence` vide.
 Les résultats LLM sont gardés dans `<sortie>.cache.jsonl` : relancer la commande reprend où elle s'est arrêtée.
 
 ## Utilisation

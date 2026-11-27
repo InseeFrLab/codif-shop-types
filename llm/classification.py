@@ -17,6 +17,7 @@ import io
 import json
 import os
 import re
+import unicodedata
 from pathlib import Path
 from string import Template
 
@@ -30,6 +31,7 @@ PROMPT_PATH = BASE_DIR / "prompts" / "classification.txt"
 # Nomenclature enrichie : code;libellé;exemples (voir llm/nomenclature_exemples.py).
 DEFAULT_NOMENCLATURE = f"{S3_DIR}/nmcl_magasins_exemples.csv"
 SEPARATEUR_EXEMPLES = " | "
+CONFIANCES = ("haute", "moyenne", "basse")
 
 
 def _read_rows(path: str | Path) -> list[dict]:
@@ -102,8 +104,18 @@ def parse_answer(text: str, nomenclature: dict[str, str]) -> dict:
     return {
         "code": code,
         "libelle": nomenclature[code],  # recopié depuis la nomenclature, pas du modèle
+        "confiance": normalize_confidence(data.get("confiance")),
         "justification": data.get("justification", ""),
     }
+
+
+def normalize_confidence(value) -> str:
+    """'Haute', ' MOYENNE ', 'basse' -> haute/moyenne/basse ; toute autre valeur -> "".
+
+    Une confiance absente ou invalide ne fait pas échouer la ligne : le code reste exploitable.
+    """
+    text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode().strip().lower()
+    return text if text in CONFIANCES else ""
 
 
 def classify_with_llm(
@@ -113,7 +125,8 @@ def classify_with_llm(
     """Classe une enseigne avec le LLM (et la recherche web si le modèle la juge utile).
 
     Renvoie un dictionnaire sérialisable en JSON :
-      - code, justification : le résultat (code None en cas d'échec) ;
+      - code, confidence, justification : le résultat (code None en cas d'échec ; confidence =
+                              haute/moyenne/basse, "" si le modèle ne l'a pas donnée) ;
       - searches            : détail des recherches web lancées (liste vide si aucune) ;
       - calls, tokens       : nombre d'appels au modèle et tokens consommés ;
       - model, provider     : modèle LLM et fournisseur de recherche utilisés ;
@@ -121,6 +134,7 @@ def classify_with_llm(
     """
     result = {
         "code": None,
+        "confidence": "",
         "justification": "",
         "searches": [],
         "calls": 0,
@@ -151,5 +165,6 @@ def classify_with_llm(
         result["error"] = str(e)
         return result
     result["code"] = parsed["code"]
+    result["confidence"] = parsed["confiance"]
     result["justification"] = parsed["justification"]
     return result

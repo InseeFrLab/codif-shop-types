@@ -24,7 +24,8 @@ COLONNES AJOUTÉES
     llm_model, llm_search_provider
     llm_websearch            true/false : le modèle a-t-il cherché sur le web ?
     llm_search_count, llm_queries, llm_justification, llm_tokens
-    error                    message d'erreur si le LLM a échoué
+    llm_confidence           haute | moyenne | basse : confiance déclarée par le modèle (basse = à relire)
+    error                   message d'erreur si le LLM a échoué
     trace_json               (option --trace) détail complet des recherches web
 
 UTILISATION
@@ -67,7 +68,7 @@ ADDED_COLUMNS = [
     "code", "store_type", "method",
     "regex_status", "regex_rules", "regex_tier", "regex_candidate_codes",
     "llm_model", "llm_search_provider", "llm_websearch", "llm_search_count", "llm_queries",
-    "llm_justification", "llm_tokens", "error",
+    "llm_justification", "llm_confidence", "llm_tokens", "error",
 ]
 
 
@@ -209,7 +210,8 @@ def run_llm_pass(keys, cache_path, nomenclature, provider, workers, websearch=Tr
                     else:
                         cache_file.write(json.dumps({"key": list(key), "result": result}, ensure_ascii=False) + "\n")
                         cache_file.flush()
-                    status = result["code"] or f"ERREUR ({result['error']})"
+                    status = (f"{result['code']} ({result.get('confidence') or '?'})" if result["code"]
+                              else f"ERREUR ({result['error']})")
                     web = f"{len(result['searches'])} recherche(s)" if result["searches"] else "sans recherche"
                     log(f"[LLM {len(results)}/{len(keys)}] {key[0]!r} ({key[1]!r}) -> {status} ; {web} ; {duration(seconds)}")
                 now = time.monotonic()
@@ -256,6 +258,7 @@ def build_output_values(regex: dict, llm: dict | None, nomenclature: dict[str, s
     values["llm_search_count"] = len(llm["searches"])
     values["llm_queries"] = " | ".join(s.get("requete", "") for s in llm["searches"])
     values["llm_justification"] = llm["justification"]
+    values["llm_confidence"] = llm.get("confidence", "")  # absent des anciennes entrées du cache
     values["llm_tokens"] = llm["tokens"]
     if trace:
         values["trace_json"] = json.dumps(llm["searches"], ensure_ascii=False)
