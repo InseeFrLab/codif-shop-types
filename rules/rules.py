@@ -602,6 +602,14 @@ add("659", W("LAFORET", "FONCIA", r"PARIONS(?: SPORT)?"), 1, "B", ref="ext. (ana
 add("611", W("BIOGROUP", "SYNLAB", "IMAGERIE MEDICALE"), 1, "B", ref="ext. (analogie Laboratoire médical, Centre radiologie)")
 add("231", W("LAGARDERE"), 1, "B", ref="ext. (Lagardère Travel Retail = boutiques Relay ; analogie Relay)")
 add("329", W("SELECTA"), 1, "B", ref="ext. (distributeurs automatiques ; analogie Machine à café, Distributeur)")
+# Évaluation du run n300 (docs/evaluation_run_26112026_1626_29.md)
+# « <métier de bouche> MARCHE » = étal sur un marché (322), pas la boutique ; MARCHE U / MARCHE FRAIS restent des supermarchés.
+add("322", r"\b(?:BOULANGER(?:IE)?|BOUCHER(?:IE)?|CHARCUT(?:IER|ERIE)|POISSONN?(?:IER|ERIE)|POISSONS?|FROMAGER(?:IE)?|CREMERIE|"
+           r"LEGUMES?|FRUITS?|PRIMEURS?|ROTISSERIE|VOLAILLER|TRAITEUR|HUITRES?|OLIVES?|MIEL)\s+MARCHE\b(?!\s+(?:U|FRAIS|PLUS|EXPRESS)\b)",
+    0, "B", ref="ext. (analogie Boucherie marché, Fromager marché, Primeur marché)")
+add("411", W("BISTRO REGENT"), 0, "B", ref="ext. (chaîne de restaurants ; prime sur BISTRO = 413)")
+add("622", W("PINDER"), 1, "B", ref="ext. (Cirque Pinder ; analogie Cirque)")
+add("314", W(r"MISTER ?AUTO", "AUTODOC"), 1, "B", ref="ext. (sites de pièces auto en ligne ; analogie Wanimo.com, La Redoute)")
 
 
 # --------------------------------------------------------------------------------------

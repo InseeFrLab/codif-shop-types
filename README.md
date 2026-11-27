@@ -166,7 +166,7 @@ Entrée : CSV `libelle;city` (comme `data/shops.csv`). Sortie : mêmes colonnes 
 `method` (`regex` / `llm` / `error` / `pending`), `regex_status` (`code` / `hors_champ` / `ambigu` /
 `aucune`), `regex_rules`, `regex_tier`, `regex_candidate_codes`, `llm_model`, `llm_search_provider`,
 `llm_websearch` (`true` si le modèle a cherché sur le web), `llm_search_count`, `llm_queries`,
-`llm_justification`, `llm_confidence`, `llm_tokens`, `error` (+ `trace_json` avec `--trace`). Les libellés qui ne sont pas
+`llm_justification`, `llm_confidence`, `llm_tokens`, `error`, `coherence_codes` (+ `trace_json` avec `--trace`). Les libellés qui ne sont pas
 une enseigne (« A DOMICILE », « ILLISIBLE »...) reçoivent le code `00` par les regex, sans appel LLM.
 
 `llm_confidence` est la confiance déclarée par le modèle :
@@ -174,6 +174,13 @@ une enseigne (« A DOMICILE », « ILLISIBLE »...) reçoivent le code `00` par 
   trouvée en recherche (une enseigne « connue » mais non vérifiée ne peut pas être `haute`) ;
 - `moyenne` : activité sûre, hésitation entre deux codes voisins ;
 - `basse` : activité incertaine ; le code est alors `99` ou un code de regroupement.
+`coherence_codes` signale les incohérences : en fin de run, les libellés équivalents (mêmes mots
+une fois retirés la forme juridique SAS/SA/SNC…, l'article initial et le pluriel, par exemple
+« LES VERGERS DE VENDEE » et « VERGER DE VENDEE ») sont regroupés ; si un groupe a reçu des codes
+différents, chacune de ses lignes porte la liste de ces codes (ex. `129,323`), et le run les affiche.
+La commune n'entre pas dans la clé : deux homonymes dans deux villes peuvent être signalés à tort.
+Sur un fichier déjà codé : `uv run -m common.coherence <fichier_coded.parquet>`.
+
 Le modèle doit répondre `99` quand l'enseigne n'est identifiée que de façon probable. Pour la
 relecture humaine, commencer par `llm_confidence = basse` et `code = 99`. Les réponses lues dans un
 cache antérieur à ce champ ont `llm_confidence` vide.

@@ -130,7 +130,7 @@ ANN_DX = 240    # explication à droite d'une bulle de 220 px
 
 # ---------------------------------------------------------------- 2. Regex
 r1 = box("R1", "Règles regex", X_RX, TOP, BLUE, w=200)
-a = ann("aR1", "Chaque libellé est comparé à environ 260 expressions régulières, écrites à partir de la liste annotée transmise par la DRTI. Les règles qui ont décidé sont notées dans la colonne regex_rules.",
+a = ann("aR1", "Chaque libellé est comparé à environ 270 expressions régulières, écrites à partir de la liste annotée transmise par la DRTI. Les règles qui ont décidé sont notées dans la colonne regex_rules.",
         X_RX + 220, TOP, 36)
 d = box("R2", "Une règle\nconclut ?", 0, max(bottom(r1), bottom(a)) + 40, LBLUE, shape="diamond")
 move(d, x=X_RX + 100 - d["width"] / 2)
@@ -206,7 +206,7 @@ ao1 = ann("aO1", "Chaque réponse réussie y est ajoutée dès qu'elle arrive. R
           X_OUT, bottom(o1) + G, 46)
 o2 = box("O2", "Fichier codé\n(_coded.csv / .parquet)", X_OUT + (W_OUT - 240) / 2, 0, GREEN)
 move(o2, y=max(cy(l8) - o2["height"] / 2, bottom(ao1) + STEP))
-ao2 = ann("aO2", "Réécrit en entier à chaque run : il contient tout ce qui a été codé jusque-là. Pour un Parquet, il est écrit sur le S3 dans runs/run_JJMMAAAA_HHMM_SS/. Voir l'exemple en bas.",
+ao2 = ann("aO2", "Réécrit en entier à chaque run : il contient tout ce qui a été codé jusque-là. Pour un Parquet, il est écrit sur le S3 dans runs/run_JJMMAAAA_HHMM_SS/. Juste avant l'écriture, un contrôle de cohérence regroupe les libellés équivalents (SAS, pluriel, article : « LES VERGERS DE VENDEE » = « VERGER DE VENDEE ») et signale ceux qui ont des codes différents (colonne coherence_codes). Voir l'exemple en bas.",
           X_OUT, bottom(o2) + G, 46)
 gx = X_LLM + W_LLM + 60   # couloir LLM -> sorties
 arrow("L8O2", "L8", "r", "O2", "l", via=[(gx + 30, cy(l8)), (gx + 30, cy(o2))] if abs(cy(l8) - cy(o2)) > 2 else None)
@@ -268,7 +268,7 @@ atab = ann("aTAB", "Lignes 1 à 4 : extrait réel de data/shops_coded.csv ; sa c
     "tier A (déduite de la liste annotée ; B = extension à relire). Vide si aucune règle ne reconnaît le libellé ; "
     "pour un libellé ambigu, elle liste les règles en conflit (ex. 413-04B,652-02A) et regex_candidate_codes les codes concernés.\n"
     "« llm_confidence » : confiance déclarée par le modèle (haute, moyenne, basse). Pour relire en priorité : les lignes « basse » et les codes 99 "
-    "(ex. MK2, classé sans recherche : un cinéma relève de 621, pas de 622).",
+    "(ex. MK2, classé sans recherche : un cinéma relève de 621, pas de 622), puis les lignes où coherence_codes n'est pas vide.",
     tx0, table_bottom + 14, 150)
 # une ligne du cache
 cx0 = tx0 + table_w + 60

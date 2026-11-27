@@ -25,7 +25,9 @@ COLONNES AJOUTÉES
     llm_websearch            true/false : le modèle a-t-il cherché sur le web ?
     llm_search_count, llm_queries, llm_justification, llm_tokens
     llm_confidence           haute | moyenne | basse : confiance déclarée par le modèle (basse = à relire)
-    error                   message d'erreur si le LLM a échoué
+    error                    message d'erreur si le LLM a échoué
+    coherence_codes          codes divergents du groupe de libellés équivalents (ex. 129,323), vide si
+                             cohérent (voir common/coherence.py) : lignes à relire
     trace_json               (option --trace) détail complet des recherches web
 
 UTILISATION
@@ -59,6 +61,7 @@ from datetime import datetime
 from pathlib import Path
 
 import rules
+from common.coherence import colonne_coherence, groupes_divergents, resume
 from common.paths import DATA_DIR
 from common.s3 import S3_DIR, connect
 from common.search_providers import PROVIDERS, check_provider, resolve_provider
@@ -68,7 +71,7 @@ ADDED_COLUMNS = [
     "code", "store_type", "method",
     "regex_status", "regex_rules", "regex_tier", "regex_candidate_codes",
     "llm_model", "llm_search_provider", "llm_websearch", "llm_search_count", "llm_queries",
-    "llm_justification", "llm_confidence", "llm_tokens", "error",
+    "llm_justification", "llm_confidence", "llm_tokens", "error", "coherence_codes",
 ]
 
 
@@ -373,6 +376,11 @@ def main() -> int:
         llm = None if regex["statut"] in ("code", "hors_champ") else llm_results.get((label, city))
         values = build_output_values(regex, llm, nomenclature, args.trace)
         added_rows.append({c: "" if values[c] is None else str(values[c]) for c in added_columns})
+    # Cohérence : libellés équivalents (SAS, pluriel, article…) mais codes différents
+    codes = [v["code"] for v in added_rows]
+    for values, flag in zip(added_rows, colonne_coherence(labels, codes)):
+        values["coherence_codes"] = flag
+    divergents = groupes_divergents(labels, codes)
     method_counts = collections.Counter(v["method"] for v in added_rows)
     if parquet:
         write_parquet_output(con, args.input, output, added_rows)
@@ -385,6 +393,10 @@ def main() -> int:
                 writer.writerow(row + [values[c] for c in added_columns])
     print(f"\nFichier écrit : {output}", file=sys.stderr)
     print("  méthode : " + ", ".join(f"{m} {n}" for m, n in sorted(method_counts.items())), file=sys.stderr)
+    if divergents:
+        print(f"  cohérence : {len(divergents)} groupe(s) de libellés équivalents aux codes différents "
+              f"(colonne coherence_codes) :", file=sys.stderr)
+        print("\n".join(resume(divergents, 10)), file=sys.stderr)
     return 0
 
 
